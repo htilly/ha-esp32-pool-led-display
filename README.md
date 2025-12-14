@@ -12,6 +12,18 @@ This project creates a dual-panel HUB75 LED matrix display (128x32 pixels total)
 - **Stopwatch**: Timer functionality
 - **Debug information**: System status and diagnostics
 
+## Screenshots and Video
+
+### Home Assistant Integration
+![Home Assistant Integration](images/HomeAssistant.png)
+
+### Display in Action
+Watch the display in action:
+
+<video src="images/PooLEDSpeedup.m4v" controls width="640"></video>
+
+Or [download the video file](images/PooLEDSpeedup.m4v) directly.
+
 ## Hardware Requirements
 
 ### Required Components
