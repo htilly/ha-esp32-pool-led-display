@@ -1,0 +1,680 @@
+esphome:
+  name: pool-led-display
+  friendly_name: Pool LED Display
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+
+api:
+  encryption:
+    key: !secret api_pool_led-display
+
+ota:
+  platform: esphome
+  password: !secret ota_pool_led-display
+logger:
+  level: DEBUG
+  logs:
+    api.connection: DEBUG
+
+# I2C för BME280
+i2c:
+  sda: 21
+  scl: 22
+  scan: true
+
+captive_portal:
+
+external_components:
+  - source: github://TillFleisch/ESPHome-HUB75-MatrixDisplayWrapper@main
+
+packages:
+  wifi_diag: !include includes/common/wifi_diagnostics.yaml
+  
+font:
+  - file: "fonts/spleen-5x8.bdf"
+    id: small_font
+    size: 8
+
+  - file: "fonts/Roboto-Regular.ttf"
+    id: big_font
+    size: 16
+
+  - file: "fonts/tom-thumb.bdf"
+    id: small_tom
+    size: 6
+
+  - file: "fonts/6_10.bdf"
+    id: F6_10
+    size: 10
+
+image:
+  - file: https://www.tilly.se/logo_spotify/icons8-spotify-64.png
+    id: alert_icon
+    type: grayscale
+    transparency: alpha_channel
+    resize: 16x16
+
+  - file: https://www.tilly.se/radiator.png
+    id: heater_icon
+    type: grayscale
+    transparency: alpha_channel
+    resize: 4x4
+
+  - file: "images/weather/sunny.png"
+    id: icon_sunny
+    type: grayscale
+    resize: 16x16
+    transparency: alpha_channel
+
+  - file: "images/weather/partlycloudy.png"
+    id: icon_partlycloudy
+    type: grayscale
+    resize: 16x16
+    transparency: alpha_channel
+
+  - file: "images/weather/cloudy.png"
+    id: icon_cloudy
+    type: grayscale
+    resize: 16x16
+    transparency: alpha_channel
+
+  - file: "images/weather/rain.png"
+    id: icon_rainy
+    type: grayscale
+    resize: 16x16
+    transparency: alpha_channel
+
+  - file: "images/weather/snow.png"
+    id: icon_snowy
+    type: grayscale
+    resize: 16x16
+    transparency: alpha_channel
+
+  - file: "images/weather/tstorms.png"
+    id: icon_lightning
+    type: grayscale
+    resize: 16x16
+    transparency: alpha_channel
+
+  - file: "images/weather/fog.png"
+    id: icon_fog
+    type: grayscale
+    resize: 16x16
+    transparency: alpha_channel
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Stockholm
+
+
+
+globals:
+  - id: display_page
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: scroll_offset_artist
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: scroll_offset_title
+    type: int
+    restore_value: no
+    initial_value: '0'
+ 
+  - id: stop_timer_millis
+    type: unsigned long
+    restore_value: no
+    initial_value: '0'
+
+  - id: stop_timer_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  
+
+
+
+interval:
+  - interval: 30s
+    then:
+      - lambda: |-
+          int new_page = id(display_page);
+          for (int i = 1; i <= 6; i++) { 
+            new_page = (new_page + 1) % 6; 
+
+            if ((new_page == 0 && id(display_spotify_enabled).state) ||
+                (new_page == 1 && id(display_custom_enabled).state) ||
+                (new_page == 2 && id(display_weather_enabled).state) ||
+                (new_page == 3 && id(display_stats_enabled).state) ||
+                (new_page == 5 && id(display_debug_enabled).state) ||
+                (new_page == 4 && id(display_stop_timer_enabled).state)) { 
+              id(display_page) = new_page;
+              break;
+            }
+          }
+
+
+  - interval: 50ms
+    then:
+      - lambda: |-
+          id(scroll_offset_artist) += 1;
+          id(scroll_offset_title) += 1;
+
+  - interval: 100ms
+    then:
+      - lambda: |-
+          static unsigned long start_time = 0;
+          if (id(stop_timer_running).state && !id(stop_timer_active)) {
+            start_time = millis();
+            id(stop_timer_active) = true;
+          } else if (!id(stop_timer_running).state && id(stop_timer_active)) {
+            id(stop_timer_active) = false;
+          }
+
+          if (id(stop_timer_active)) {
+            id(stop_timer_millis) = millis() - start_time;
+          }
+
+
+sensor:
+
+
+  - platform: wifi_signal
+    name: "Pool LED WiFi Signalstyrka"
+    id: wifi_strength
+    update_interval: 30s
+
+# BME280-sensor (temperatur, tryck, luftfuktighet)
+  - platform: bme280_i2c
+    temperature:
+      name: "Pool LED Inner Temperatur"
+      id: esp32_temp
+    pressure:
+      name: "Pool LED Inner Lufttryck"
+    humidity:
+      name: "Pool LED Inner Luftfuktighet"
+    address: 0x76  # Ändra till 0x77 om sensorn inte hittas
+    update_interval: 60s
+
+  - platform: homeassistant
+    entity_id: sensor.pool_switch_electric_consumption_w
+    id: pool_power_consumption
+    name: "Pool Heater Power Consumption"
+
+  - platform: homeassistant
+    entity_id: sensor.current_pool_session_duration
+    id: current_pool_session_duration
+    name: "Aktiv tid i poolen"
+
+  - platform: homeassistant
+    entity_id: input_number.pool_session_max_people
+    id: pool_max_people
+    name: "Max People in Pool Session"
+
+  - platform: homeassistant
+    entity_id: sensor.pooldetect_person_active_count
+    id: pooldetect_person_active_count
+    name: "People in the pool"
+
+  - platform: homeassistant
+    entity_id: sensor.bestway_ph
+    id: bestway_ph_sensor
+    name: "Poolen pH"
+
+  - platform: homeassistant
+    entity_id: sensor.bestway_orp
+    id: bestway_orp_sensor
+    name: "Poolen ORP"
+
+  - platform: homeassistant
+    entity_id: sensor.bestway_temperature
+    id: bestway_temperature_sensor
+    name: "Poolen Temperatur"
+
+  - platform: homeassistant
+    entity_id: sensor.pool_pump_current_pool_pump_rpm
+    id: pool_pump_rpm
+    name: "Pool Pump RPM"
+
+  - platform: homeassistant
+    entity_id: weather.smhi_home
+    attribute: temperature
+    id: weather_temp
+
+  - platform: homeassistant
+    entity_id: weather.smhi_home
+    attribute: humidity
+    id: weather_humidity
+
+  - platform: homeassistant
+    entity_id: weather.smhi_home
+    attribute: wind_speed
+    id: weather_wind_speed
+
+  - platform: homeassistant
+    entity_id: weather.smhi_home
+    attribute: wind_bearing
+    id: weather_wind_bearing
+
+  - platform: homeassistant
+    entity_id: weather.smhi_home
+    attribute: cloud_coverage
+    id: weather_clouds
+
+binary_sensor:
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_stop_timer
+    id: display_stop_timer_enabled
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_timer_running
+    id: stop_timer_running
+    on_press:
+      - lambda: |-
+          // Instantly switch to the Stop Timer page
+          id(display_page) = 4;
+          id(stop_timer_active) = true;     // already used by your 100ms interval
+          id(stop_timer_millis) = 0;        // optional: clear visible time on start
+    on_release:
+      - lambda: |-
+          // Don't change page here; HA automation handles the 2 min grace + restore
+          id(stop_timer_active) = false;
+
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_spotify
+    id: display_spotify_enabled
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_custom_message
+    id: display_custom_enabled
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_weather
+    id: display_weather_enabled
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_stats
+    id: display_stats_enabled
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_debug
+    id: display_debug_enabled
+
+text_sensor:
+  - platform: homeassistant
+    entity_id: media_player.spotify_htilly
+    attribute: media_title
+    id: spotify_media_title
+
+  - platform: homeassistant
+    entity_id: media_player.spotify_htilly
+    attribute: media_artist
+    id: spotify_media_artist
+
+  - platform: homeassistant
+    entity_id: sensor.pool_heater_hvac_mode
+    id: heater_mode
+
+  - platform: homeassistant
+    entity_id: weather.smhi_home
+    id: weather_condition
+
+  - platform: homeassistant
+    entity_id: input_text.pool_led_custom_message
+    id: custom_display_text
+
+  - platform: homeassistant
+    entity_id: sensor.pool_session_start
+    id: pool_session_start
+
+switch:
+  - platform: hub75_matrix_display
+    matrix_id: matrix
+    name: "Pool LED Power"
+    restore_mode: ALWAYS_ON
+    id: power
+
+number:
+  - platform: hub75_matrix_display
+    matrix_id: matrix
+    name: "Pool LED Brightness"
+
+display:
+  - platform: hub75_matrix_display
+    id: matrix
+    width: 64
+    height: 32
+    chain_length: 2
+    driver: ICN2038S
+    i2sspeed: HZ_15M
+    R1_pin: 25
+    G1_pin: 26
+    B1_pin: 27
+    R2_pin: 14
+    G2_pin: 12
+    B2_pin: 13
+    A_pin: 23
+    B_pin: 19
+    C_pin: 5
+    D_pin: 17
+    LAT_pin: 4
+    OE_pin: 15
+    CLK_pin: 16
+    update_interval: 0.1s
+    clock_phase: false
+    lambda: |-
+        using namespace esphome::time;
+
+        // Clear right-hand side area
+        it.filled_rectangle(65, 0, 63, 32, Color(0, 0, 0));
+
+        int now_seconds = id(sntp_time).now().second;
+        bool show_ph = (now_seconds % 30) < 15;
+
+        // Show pH or ORP with segmented color bar and value indicator
+        if (show_ph && id(bestway_ph_sensor).has_state()) {
+                float ph = id(bestway_ph_sensor).state;
+                it.printf(2, 0, id(small_font), Color(255, 255, 255), TextAlign::TOP_LEFT, "pH :%.1f", ph);
+
+                // Segmented bar (6.0–9.0 = 64px range)
+                struct Segment { float from; float to; Color color; };
+                Segment ph_segments[] = {
+                        {6.0, 6.6, Color(219, 68, 55)},
+                        {6.6, 7.2, Color(255, 166, 0)},
+                        {7.2, 7.6, Color(67, 160, 71)},
+                        {7.6, 8.4, Color(255, 166, 0)},
+                        {8.4, 9.0, Color(219, 68, 55)}
+                };
+
+                for (auto& seg : ph_segments) {
+                        int x_start = std::max(0, int((seg.from - 6.0f) / 3.0f * 64.0f));
+                        int x_end   = std::min(63, int((seg.to - 6.0f) / 3.0f * 64.0f));
+                        it.filled_rectangle(x_start, 9, x_end - x_start + 1, 2, seg.color);
+                }
+
+                int ph_x = int((ph - 6.0f) / 3.0f * 64.0f);
+                if (ph_x >= 0 && ph_x < 64) {
+                        it.line(ph_x, 8, ph_x, 11, Color(255, 255, 255));
+                }
+        } else if (!show_ph && id(bestway_orp_sensor).has_state()) {
+                float orp = id(bestway_orp_sensor).state;
+                it.printf(2, 0, id(small_font), Color(255, 255, 255), TextAlign::TOP_LEFT, "ORP:%.0f", orp);
+
+                // Segmented bar (300–1000 = 64px range)
+                struct Segment { float from; float to; Color color; };
+                Segment orp_segments[] = {
+                        {300, 400, Color(219, 68, 55)},
+                        {400, 550, Color(255, 166, 0)},
+                        {550, 650, Color(67, 160, 71)},
+                        {650, 900, Color(255, 166, 0)},
+                        {900, 1000, Color(219, 68, 55)}
+                };
+
+                for (auto& seg : orp_segments) {
+                        int x_start = std::max(0, int((seg.from - 300.0f) / 700.0f * 64.0f));
+                        int x_end   = std::min(63, int((seg.to - 300.0f) / 700.0f * 64.0f));
+                        it.filled_rectangle(x_start, 9, x_end - x_start + 1, 2, seg.color);
+                }
+
+                int orp_x = int((orp - 300.0f) / 700.0f * 64.0f);
+                if (orp_x >= 0 && orp_x < 64) {
+                        it.line(orp_x, 8, orp_x, 11, Color(255, 255, 255));
+                }
+        } else {
+                it.printf(2, 0, id(small_font), Color(255, 255, 255), TextAlign::TOP_LEFT, show_ph ? "pH: --" : "ORP: --");
+                it.filled_rectangle(0, 9, 64, 2, Color(64, 0, 0));  // fallback dim red
+        }
+
+
+        // Show current time (top right)
+        auto now = id(sntp_time).now();
+        if (now.is_valid()) {
+            char time_str[6];
+            snprintf(time_str, sizeof(time_str), "%02d:%02d", now.hour, now.minute);
+            it.printf(40, 0, id(small_font), Color(100, 200, 255), TextAlign::TOP_LEFT, "%s", time_str);
+        } else {
+            it.printf(40, 0, id(small_font), Color(100, 200, 255), TextAlign::TOP_LEFT, "--:--");
+        }
+
+        // RPM bar (2px high, under pH/ORP bar with 1px spacing)
+        if (id(pool_pump_rpm).has_state()) {
+                float rpm = id(pool_pump_rpm).state;
+                int bar_width = int(rpm / 2900.0f * 64.0f);
+                bar_width = (bar_width < 0) ? 0 : (bar_width > 64 ? 64 : bar_width);
+                it.filled_rectangle(0, 12, bar_width, 2, Color(128, 128, 128));
+        } else {
+                it.filled_rectangle(0, 12, 64, 2, Color(255, 0, 0));
+        }
+
+        // Temperature with optional heater icon
+        if (id(bestway_temperature_sensor).has_state()) {
+            float temp = id(bestway_temperature_sensor).state;
+            Color temp_color = (temp > 27.0f) ? Color(255, 0, 0)
+                : (temp > 22.0f) ? Color(255, 255, 0)
+                : Color(0, 0, 255);
+            it.printf(2, 13, id(big_font), temp_color, TextAlign::TOP_LEFT, "%.1f°C", temp);
+
+        // Power consumption bar (red), under temperature
+        if (id(pool_power_consumption).has_state()) {
+            float watts = id(pool_power_consumption).state;
+            int bar_width = int(watts / 2000.0f * 64.0f);
+            bar_width = (bar_width < 0) ? 0 : (bar_width > 64 ? 64 : bar_width);
+            it.filled_rectangle(0, 29, bar_width, 1, Color(255, 0, 0));
+        } else {
+            it.filled_rectangle(0, 29, 64, 1, Color(64, 0, 0));  // dim red fallback
+        }
+
+            if (id(heater_mode).has_state() && (id(heater_mode).state == "auto" || id(heater_mode).state == "heat")) {
+                it.image(54, 24, id(heater_icon), Color(255, 0, 0));
+            }
+        } else {
+            it.printf(2, 13, id(big_font), Color(255, 0, 0), TextAlign::TOP_LEFT, "--°C");
+        }
+
+        // Always show number of people in pool (bottom left corner)
+        if (id(pooldetect_person_active_count).has_state()) {
+            it.printf(54, 24, id(small_font), Color(255, 255, 255), TextAlign::BOTTOM_LEFT, "%d", (int)id(pooldetect_person_active_count).state);
+        } else {
+            it.printf(54, 24, id(small_font), Color(255, 0, 0), TextAlign::BOTTOM_LEFT, "--");
+        }
+
+        // Utility for truncating strings
+        const int max_text_length = 16;
+        auto truncate_text = [&](const std::string &text) {
+            return (text.length() > max_text_length)
+                ? text.substr(0, max_text_length - 2) + ".."
+                : text;
+        };
+
+        // Page 0: Spotify
+        if (id(display_page) == 0) {
+                const int left_bound = 65;
+                const int right_bound = 127;
+                const int max_width_px = right_bound - left_bound;
+
+                std::string artist = id(spotify_media_artist).has_state() ? id(spotify_media_artist).state : "";
+                std::string title = id(spotify_media_title).has_state() ? id(spotify_media_title).state : "";
+
+                std::string sep = "   -=-   ";
+
+                // --- Artist scroll ---
+                if ((artist.length() * 5) > max_width_px) {
+                        std::string base = artist + sep;
+                        std::string scroll_artist = base + base;  // repeat twice
+                        int scroll_px = base.length() * 5;
+                        int offset = id(scroll_offset_artist) % (scroll_px + 20);  // +20px pause at start
+
+                        // only scroll if past pause
+                        int effective_offset = offset < 20 ? 0 : offset - 20;
+
+                        for (int i = 0; i < scroll_artist.length(); i++) {
+                                int char_x = left_bound - effective_offset + i * 5;
+                                if (char_x >= left_bound && char_x <= right_bound) {
+                                        it.printf(char_x, 8, id(F6_10), Color(255, 255, 255), TextAlign::TOP_LEFT, "%c", scroll_artist[i]);
+                                }
+                        }
+                } else {
+                        int text_width = artist.length() * 5;
+                        int center_x = left_bound + (max_width_px - text_width) / 2;
+                        it.printf(center_x, 8, id(F6_10), Color(255, 255, 255), TextAlign::TOP_LEFT, "%s", artist.c_str());
+                }
+
+                // --- Title scroll ---
+                if ((title.length() * 6) > max_width_px) {
+                        std::string base = title + sep;
+                        std::string scroll_title = base + base;
+                        int scroll_px = base.length() * 6;
+                        int offset = id(scroll_offset_title) % (scroll_px + 20);
+
+                        int effective_offset = offset < 20 ? 0 : offset - 20;
+
+                        for (int i = 0; i < scroll_title.length(); i++) {
+                                int char_x = left_bound - effective_offset + i * 6;
+                                if (char_x >= left_bound && char_x <= right_bound) {
+                                        it.printf(char_x, 21, id(F6_10), Color(0, 200, 255), TextAlign::TOP_LEFT, "%c", scroll_title[i]);
+                                }
+                        }
+                } else {
+                        int text_width = title.length() * 6;
+                        int center_x = left_bound + (max_width_px - text_width) / 2;
+                        it.printf(center_x, 21, id(F6_10), Color(0, 200, 255), TextAlign::TOP_LEFT, "%s", title.c_str());
+                }
+        }
+
+
+
+
+        // Page 1: Custom message
+        else if (id(display_page) == 1) {
+          if (id(custom_display_text).has_state()) {
+            std::string message = id(custom_display_text).state;
+            const int left_bound = 65;
+            const int right_bound = 127;
+            const int max_width_px = right_bound - left_bound;
+
+            int char_width = 4;  // estimated char width with `small_font`
+            int message_width_px = message.length() * char_width;
+
+            if (message_width_px > max_width_px) {
+              std::string sep = "     ";  // pause between repeats
+              std::string base = message + sep;
+              std::string scroll_text = base + base;  // repeat to enable wrap-around
+              int scroll_px = base.length() * char_width;
+              int offset = id(scroll_offset_title) % (scroll_px + 20);  // +20 px pause
+
+              int effective_offset = offset < 20 ? 0 : offset - 20;
+
+              for (int i = 0; i < scroll_text.length(); i++) {
+                int char_x = left_bound - effective_offset + i * char_width;
+                if (char_x >= left_bound && char_x <= right_bound) {
+                  it.printf(char_x, 16, id(small_font), Color(255, 255, 255), TextAlign::TOP_LEFT, "%c", scroll_text[i]);
+                }
+              }
+            } else {
+              int center_x = left_bound + (max_width_px - message_width_px) / 2;
+              it.printf(center_x, 16, id(small_font), Color(255, 255, 255), TextAlign::TOP_LEFT, "%s", message.c_str());
+            }
+          }
+        }
+
+        // Page 2: Weather
+        else if (id(display_page) == 2) {
+            if (id(weather_condition).has_state()) {
+                auto cond = id(weather_condition).state;
+                if (cond == "sunny") it.image(113, 0, id(icon_sunny), Color(255, 255, 255));
+                else if (cond == "partlycloudy") it.image(113, 0, id(icon_partlycloudy), Color(255, 255, 255));
+                else if (cond == "cloudy") it.image(113, 0, id(icon_cloudy), Color(255, 255, 255));
+                else if (cond == "rainy") it.image(113, 0, id(icon_rainy), Color(255, 255, 255));
+                else if (cond == "snowy") it.image(113, 0, id(icon_snowy), Color(255, 255, 255));
+                else if (cond == "lightning") it.image(113, 0, id(icon_lightning), Color(255, 255, 255));
+                else if (cond == "fog") it.image(113, 0, id(icon_fog), Color(255, 255, 255));
+            }
+
+            if (id(weather_temp).has_state()) {
+                it.printf(90, 20, id(big_font), Color(255, 255, 255), TextAlign::CENTER, "%.1f°C", id(weather_temp).state);
+            }
+        }
+
+        // Page 3: Pool stats
+        else if (id(display_page) == 3) {
+            const int left_bound = 65;
+            const int right_bound = 127;
+            const int center_x = left_bound + (right_bound - left_bound) / 2;
+
+            if (id(pooldetect_person_active_count).has_state()) {
+                int people = (int)id(pooldetect_person_active_count).state;
+                it.printf(center_x, 3, id(small_font), Color(0, 255, 255), TextAlign::CENTER, "In pool: %d", people);
+            } else {
+                it.printf(center_x, 3, id(small_font), Color(255, 0, 0), TextAlign::CENTER, "In pool: --");
+            }
+
+            if (id(pool_max_people).has_state()) {
+                it.printf(center_x, 15, id(small_font), Color(255, 255, 0), TextAlign::CENTER, "Max: %d", (int)id(pool_max_people).state);
+            } else {
+                it.printf(center_x, 15, id(small_font), Color(255, 0, 0), TextAlign::CENTER, "Max: --");
+            }
+
+            if (id(current_pool_session_duration).has_state()) {
+                int total_seconds = (int)(id(current_pool_session_duration).state * 60);
+                if (total_seconds >= 0 && total_seconds < 360000) {
+                    int mins = total_seconds / 60;
+                    it.printf(center_x, 25, id(small_font), Color(0, 255, 0), TextAlign::CENTER, "%d min", mins);
+                }
+            } else {
+                it.printf(center_x, 25, id(small_font), Color(255, 0, 0), TextAlign::CENTER, "Tid: --");
+            }
+        }
+
+        // Page 4: Stop Timer
+        else if (id(display_page) == 4) {
+          const int left_bound = 65;
+          const int right_bound = 127;
+          const int center_x = left_bound + (right_bound - left_bound) / 2;
+
+          unsigned long ms = id(stop_timer_millis);
+          int total_secs = ms / 1000;
+          int mins = total_secs / 60;
+          int secs = total_secs % 60;
+          int tenths = (ms % 1000) / 100;
+
+          it.printf(center_x, 8, id(big_font), Color(255, 255, 255), TextAlign::CENTER, "%02d:%02d.%d", mins, secs, tenths);
+
+          if (id(stop_timer_running).state) {
+            it.printf(center_x, 25, id(small_font), Color(0, 255, 0), TextAlign::CENTER, "Running");
+          } else {
+            it.printf(center_x, 25, id(small_font), Color(255, 0, 0), TextAlign::CENTER, "Stopped");
+          }
+        }
+
+        // Page 5: DEBUG
+        else if (id(display_page) == 5) {
+          it.printf(66, 0, id(small_font), Color(255, 255, 0), TextAlign::TOP_LEFT, "DEBUG");
+
+          if (id(esp32_temp).has_state()) {
+            it.printf(66, 9, id(small_font), Color(255, 255, 255), TextAlign::TOP_LEFT,
+                      "Temp: %.1fC", id(esp32_temp).state);
+          }
+
+          if (id(wifi_strength).has_state()) {
+            it.printf(66, 16, id(small_font), Color(200, 200, 255), TextAlign::TOP_LEFT,
+                      "WiFi: %.0f dBm", id(wifi_strength).state);
+          }
+
+          it.printf(66, 23, id(small_font), Color(150, 255, 150), TextAlign::TOP_LEFT,
+                    "Uptime: %u min", (unsigned)(millis() / 60000));
+        }
+
