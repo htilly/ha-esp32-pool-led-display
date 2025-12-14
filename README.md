@@ -20,9 +20,7 @@ This project creates a dual-panel HUB75 LED matrix display (128x32 pixels total)
 ### Display in Action
 Watch the display in action:
 
-<video src="images/PooLEDSpeedup.m4v" controls width="640"></video>
-
-Or [download the video file](images/PooLEDSpeedup.m4v) directly.
+![Pool LED Display Animation](images/Animated.gif)
 
 ## Hardware Requirements
 
