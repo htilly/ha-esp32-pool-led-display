@@ -28,9 +28,11 @@ Watch the display in action:
 - **ESP32 development board** (ESP32-DevKitC or similar)
 - **HUB75 LED matrix panels** (2x 64x32 RGB panels)
 - **ICN2038S driver** compatible panels
-- **BME280 sensor** (for internal temperature, pressure, humidity monitoring)
 - **Power supply** (adequate for LED panels - typically 5V, 10A+)
 - **Level shifters** (if needed for 3.3V to 5V conversion)
+
+### Optional Components
+- **BME280 sensor** (for internal temperature, pressure, humidity on the debug page). Standard är att enheten fungerar **utan** BME280 (dummy-sensor används). Har du sensorn: kommentera bort dummy-blocket (template-sensorn) under `sensor:` i `pool-led-display.yaml` och avkommentera BME280-blocket ovanför det.
 
 ### Bill of Materials (BOM)
 
@@ -43,7 +45,9 @@ The display uses the following GPIO pins:
 - **RGB Data**: R1=25, G1=26, B1=27, R2=14, G2=12, B2=13
 - **Address**: A=23, B=19, C=5, D=17
 - **Control**: LAT=4, OE=15, CLK=16
-- **I2C**: SDA=21, SCL=22 (for BME280)
+- **I2C**: SDA=21, SCL=22 (endast vid BME280 – används inte om du låter dummy-sensorn vara aktiv)
+
+**OBS:** Om du inte använder BME280 behöver du inte koppla I2C. Captive portal är aktiverat – vid saknad WiFi visas ett konfigurationsnätverk så att du kan ange nätverksuppgifter.
 
 ## Software Requirements
 
@@ -57,7 +61,7 @@ The display uses the following GPIO pins:
 
 1. Install ESPHome (via Home Assistant add-on or standalone)
 2. Create a new ESPHome device configuration
-3. Copy the contents of `pool-led-display.yaml` to your ESPHome configuration
+3. Copy the contents of `pool-led-display.yaml` to your ESPHome configuration and ensure the `includes/common/wifi_diagnostics.yaml` file is present. Utan BME280 behöver du inte ändra något – dummy-sensorn är aktiv som standard.
 
 ### 2. Secrets Configuration
 
@@ -235,6 +239,17 @@ Default I2C address is `0x76`. Change to `0x77` if your sensor uses that address
 - Verify BME280 connections (SDA/SCL)
 - Check I2C address (try 0x77 if 0x76 doesn't work)
 - Ensure proper power to sensor
+
+### Serial upload: "MD5 of file does not match data in flash"
+Vid USB-serial-flash kan verifieringen misslyckas (instabil koppling eller ström). Prova i ordning:
+1. **Koppla bort HUB75-panelen** under flash (ström + brus på GPIO 5/12/15 kan störa).
+2. **Kör om flash** – ibland lyckas det andra gången.
+3. **Lägre baud rate:** från terminal: `esphome run pool-led-display.yaml --upload_speed 115200` (välj sedan "Upload via Serial").
+4. **Bättre USB-kabel** och annan USB-port; kort kabel ofta stabilare.
+5. **Rensa flash först:** `esphome run pool-led-display.yaml --upload_speed 115200` och välj "Erase Flash" innan upload om det finns som alternativ, eller använd `esptool.py erase_flash` innan du flashar igen.
+
+### Strapping pins (GPIO 5, 12, 15)
+ESPHome varnar eftersom dessa används av HUB75. Det är normalt för denna koppling; använd stabil strömförsörjning och undvik att ladda om under flash om det inte behövs.
 
 ## License
 

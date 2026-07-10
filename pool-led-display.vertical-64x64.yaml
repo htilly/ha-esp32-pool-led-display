@@ -1,0 +1,919 @@
+esphome:
+  name: pool-led-display
+  friendly_name: Pool LED Display
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+    advanced:
+      minimum_chip_revision: "3.1"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_pool_led-display
+
+ota:
+  platform: esphome
+  password: !secret ota_pool_led-display
+
+logger:
+  level: INFO
+  logs:
+    api.connection: INFO
+
+i2c:
+  sda: 21
+  scl: 22
+  scan: false
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+packages:
+  wifi_diag: !include includes/common/wifi_diagnostics.yaml
+
+font:
+  - file: "fonts/spleen-5x8.bdf"
+    id: small_font
+    size: 8
+
+  - file: "fonts/Roboto-Regular.ttf"
+    id: small_font_utf8
+    size: 8
+    glyphs:
+      [
+        " !\"%()+=,-_.:°/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+        "ÅÄÖåäö"
+      ]
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Stockholm
+
+globals:
+  - id: display_page
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: scroll_offset_artist
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: scroll_offset_title
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: stop_timer_millis
+    type: unsigned long
+    restore_value: no
+    initial_value: '0'
+
+  - id: stop_timer_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+interval:
+  - interval: 30s
+    then:
+      - lambda: |-
+          const int current_page = id(display_page);
+          const int page_order[] = {0, 1, 2, 3, 4, 5, 6};
+          auto page_enabled = [&](int page) -> bool {
+            if (page == 0) return false;  // Summary is fallback only, not in rotation.
+            if (page == 1) return id(display_spotify_enabled).state;
+            if (page == 2) return id(display_custom_enabled).state;
+            if (page == 3) return id(display_weather_enabled).state;
+            if (page == 4) return id(display_stats_enabled).state;
+            if (page == 5) return id(display_stop_timer_enabled).state;
+            if (page == 6) return id(display_debug_enabled).state;
+            return false;
+          };
+
+          int current_index = 0;
+          for (size_t i = 0; i < sizeof(page_order) / sizeof(page_order[0]); i++) {
+            if (page_order[i] == current_page) {
+              current_index = i;
+              break;
+            }
+          }
+
+          for (size_t step = 1; step <= sizeof(page_order) / sizeof(page_order[0]); step++) {
+            int next_page = page_order[(current_index + step) % (sizeof(page_order) / sizeof(page_order[0]))];
+            if (page_enabled(next_page)) {
+              id(display_page) = next_page;
+              break;
+            }
+          }
+
+  - interval: 50ms
+    then:
+      - lambda: |-
+          if (id(display_page) == 1) {
+            id(scroll_offset_artist) += 1;
+            id(scroll_offset_title) += 1;
+          } else if (id(display_page) == 2) {
+            id(scroll_offset_title) += 1;
+          }
+
+  - interval: 100ms
+    then:
+      - lambda: |-
+          static unsigned long start_time = 0;
+          const bool timer_running = id(stop_timer_running).state;
+
+          if (timer_running && !id(stop_timer_active)) {
+            start_time = millis();
+            id(stop_timer_active) = true;
+            id(stop_timer_millis) = 0;
+          } else if (!timer_running && id(stop_timer_active)) {
+            id(stop_timer_active) = false;
+          }
+
+          if (id(stop_timer_active)) {
+            id(stop_timer_millis) = millis() - start_time;
+          }
+
+sensor:
+  - platform: wifi_signal
+    name: "Pool LED WiFi Signalstyrka"
+    id: wifi_strength
+    update_interval: 30s
+
+  - platform: bme280_i2c
+    temperature:
+      name: "Pool LED Inner Temperatur"
+      id: esp32_temp
+    pressure:
+      name: "Pool LED Inner Lufttryck"
+    humidity:
+      name: "Pool LED Inner Luftfuktighet"
+    address: 0x76
+    update_interval: 60s
+
+  - platform: homeassistant
+    entity_id: sensor.pool_switch_electric_consumption_w
+    id: pool_power_consumption
+    name: "Pool Heater Power Consumption"
+
+  - platform: homeassistant
+    entity_id: sensor.current_pool_session_duration
+    id: current_pool_session_duration
+    name: "Aktiv tid i poolen"
+
+  - platform: homeassistant
+    entity_id: input_number.pool_session_max_people
+    id: pool_max_people
+    name: "Max People in Pool Session"
+
+  - platform: homeassistant
+    entity_id: sensor.pooldetect_person_active_count
+    id: pooldetect_person_active_count
+    name: "People in the pool"
+
+  - platform: homeassistant
+    entity_id: sensor.bestway_ph
+    id: bestway_ph_sensor
+    name: "Poolen pH"
+
+  - platform: homeassistant
+    entity_id: sensor.bestway_orp
+    id: bestway_orp_sensor
+    name: "Poolen ORP"
+
+  - platform: homeassistant
+    entity_id: sensor.bestway_temperature
+    id: bestway_temperature_sensor
+    name: "Poolen Temperatur"
+
+  - platform: homeassistant
+    entity_id: sensor.pool_pump_current_pool_pump_rpm
+    id: pool_pump_rpm
+    name: "Pool Pump RPM"
+
+  - platform: homeassistant
+    entity_id: weather.smhi_home
+    attribute: temperature
+    id: weather_temp
+
+  - platform: homeassistant
+    entity_id: media_player.altan
+    attribute: volume_level
+    id: altan_volume
+    internal: true
+
+binary_sensor:
+  - platform: homeassistant
+    entity_id: switch.poolbelysning
+    id: pool_light
+    name: "Pool belysning"
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_stop_timer
+    id: display_stop_timer_enabled
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_timer_running
+    id: stop_timer_running
+    on_press:
+      - lambda: |-
+          id(display_page) = 5;
+          id(stop_timer_active) = true;
+          id(stop_timer_millis) = 0;
+    on_release:
+      - lambda: |-
+          id(stop_timer_active) = false;
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_spotify
+    id: display_spotify_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 1;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 1) id(display_page) = 0;
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_custom_message
+    id: display_custom_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 2;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 2) id(display_page) = 0;
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_weather
+    id: display_weather_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 3;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 3) id(display_page) = 0;
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_stats
+    id: display_stats_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 4;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 4) id(display_page) = 0;
+
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_debug
+    id: display_debug_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 6;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 6) id(display_page) = 0;
+
+text_sensor:
+  - platform: homeassistant
+    entity_id: media_player.spotify_htilly
+    attribute: media_title
+    id: spotify_media_title
+
+  - platform: homeassistant
+    entity_id: media_player.spotify_htilly
+    attribute: media_artist
+    id: spotify_media_artist
+
+  - platform: homeassistant
+    entity_id: sensor.pool_heater_hvac_mode
+    id: heater_mode
+
+  - platform: homeassistant
+    entity_id: weather.smhi_home
+    id: weather_condition
+
+  - platform: homeassistant
+    entity_id: input_text.pool_led_custom_message
+    id: custom_display_text
+
+  - platform: homeassistant
+    entity_id: media_player.altan
+    id: altan_media_state
+
+  - platform: homeassistant
+    entity_id: sensor.pool_pool_roof_classification
+    id: pool_roof_classification
+    name: "Pool tak klassificering"
+
+switch:
+  - platform: hub75_matrix_display_custom
+    matrix_id: matrix
+    name: "Pool LED Power"
+    restore_mode: ALWAYS_ON
+    id: power
+
+number:
+  - platform: hub75_matrix_display_custom
+    matrix_id: matrix
+    name: "Pool LED Brightness"
+
+display:
+  - platform: hub75_matrix_display_custom
+    id: matrix
+    width: 64
+    height: 32
+    chain_length: 2
+    virtual_rows: 2
+    virtual_cols: 1
+    # Chosen from mapping-test results:
+    # top physical panel is first in the DMA chain, bottom panel is second.
+    virtual_chain_type: CHAIN_BOTTOM_LEFT_UP_ZZ
+    driver: ICN2038S
+    i2sspeed: HZ_15M
+    R1_pin: 25
+    G1_pin: 26
+    B1_pin: 27
+    R2_pin: 14
+    G2_pin: 12
+    B2_pin: 13
+    A_pin: 23
+    B_pin: 19
+    C_pin: 5
+    D_pin: 17
+    LAT_pin: 4
+    OE_pin: 15
+    CLK_pin: 16
+    update_interval: 0.1s
+    clock_phase: false
+    lambda: |-
+        using namespace esphome::time;
+
+        static const Color COLOR_BLACK(0, 0, 0);
+        static const Color COLOR_WHITE(255, 255, 255);
+        static const Color COLOR_BLUE(70, 150, 255);
+        static const Color COLOR_CYAN(0, 210, 255);
+        static const Color COLOR_GREEN(60, 220, 120);
+        static const Color COLOR_YELLOW(255, 220, 90);
+        static const Color COLOR_ORANGE(255, 160, 40);
+        static const Color COLOR_RED(255, 70, 70);
+        static const Color COLOR_DIM_RED(72, 18, 18);
+        static const Color COLOR_GRAY(90, 90, 90);
+        static const Color COLOR_DARK(30, 30, 30);
+        static const Color COLOR_DIM_PWR(179, 49, 49);
+        // Labels/headers: light enough to read in daylight, still below pure white
+        // so colored values stay dominant. Bump toward 255 if still too faint.
+        static const Color COLOR_LIGHT(200, 200, 200);
+
+        struct Segment { float from; float to; Color color; };
+        static const Segment ph_segments[] = {
+          {6.0f, 6.6f, Color(219, 68, 55)},
+          {6.6f, 7.2f, Color(255, 166, 0)},
+          {7.2f, 7.6f, Color(67, 160, 71)},
+          {7.6f, 8.4f, Color(255, 166, 0)},
+          {8.4f, 9.0f, Color(219, 68, 55)}
+        };
+        static const Segment orp_segments[] = {
+          {300.0f, 400.0f, Color(219, 68, 55)},
+          {400.0f, 550.0f, Color(255, 166, 0)},
+          {550.0f, 650.0f, Color(67, 160, 71)},
+          {650.0f, 900.0f, Color(255, 166, 0)},
+          {900.0f, 1000.0f, Color(219, 68, 55)}
+        };
+
+        struct ScrollCache {
+          std::string last_text;
+          std::string last_separator;
+          std::vector<std::string> base_chars;
+          std::vector<std::string> scroll_chars;
+          int base_text_width_px = 0;
+          int scroll_px = 0;
+        };
+        static ScrollCache artist_cache;
+        static ScrollCache title_cache;
+        static ScrollCache custom_cache;
+
+        // Draw via the component's native primitives. draw_absolute_pixel_internal
+        // already clips to 0..63, so no separate bounds check is needed here.
+        // Routing rectangles through it.filled_rectangle (instead of a manual
+        // pixel loop that re-enters it.filled_rectangle 1x1 per pixel) removes
+        // several layers of per-pixel overhead in virtual-panel mode.
+        auto draw_pixel = [&](int x, int y, const Color &color) {
+          it.draw_pixel_at(x, y, color);
+        };
+        auto fill_rect = [&](int x, int y, int w, int h, const Color &color) {
+          if (w <= 0 || h <= 0) return;
+          it.filled_rectangle(x, y, w, h, color);
+        };
+        auto draw_hline = [&](int x, int y, int w, const Color &color) {
+          fill_rect(x, y, w, 1, color);
+        };
+        auto draw_vline = [&](int x, int y, int h, const Color &color) {
+          fill_rect(x, y, 1, h, color);
+        };
+        auto draw_outline = [&](int x, int y, int w, int h, const Color &color) {
+          draw_hline(x, y, w, color);
+          draw_hline(x, y + h - 1, w, color);
+          draw_vline(x, y, h, color);
+          draw_vline(x + w - 1, y, h, color);
+        };
+
+        auto draw_char_3x5 = [&](int x, int y, char ch, const Color &color, int scale) {
+          if (ch >= 'a' && ch <= 'z') ch -= 32;
+          const char *rows[5] = {"000", "000", "000", "000", "000"};
+          switch (ch) {
+            case '0': rows[0]="111"; rows[1]="101"; rows[2]="101"; rows[3]="101"; rows[4]="111"; break;
+            case '1': rows[0]="010"; rows[1]="110"; rows[2]="010"; rows[3]="010"; rows[4]="111"; break;
+            case '2': rows[0]="111"; rows[1]="001"; rows[2]="111"; rows[3]="100"; rows[4]="111"; break;
+            case '3': rows[0]="111"; rows[1]="001"; rows[2]="111"; rows[3]="001"; rows[4]="111"; break;
+            case '4': rows[0]="101"; rows[1]="101"; rows[2]="111"; rows[3]="001"; rows[4]="001"; break;
+            case '5': rows[0]="111"; rows[1]="100"; rows[2]="111"; rows[3]="001"; rows[4]="111"; break;
+            case '6': rows[0]="111"; rows[1]="100"; rows[2]="111"; rows[3]="101"; rows[4]="111"; break;
+            case '7': rows[0]="111"; rows[1]="001"; rows[2]="010"; rows[3]="010"; rows[4]="010"; break;
+            case '8': rows[0]="111"; rows[1]="101"; rows[2]="111"; rows[3]="101"; rows[4]="111"; break;
+            case '9': rows[0]="111"; rows[1]="101"; rows[2]="111"; rows[3]="001"; rows[4]="111"; break;
+            case 'A': rows[0]="010"; rows[1]="101"; rows[2]="111"; rows[3]="101"; rows[4]="101"; break;
+            case 'B': rows[0]="110"; rows[1]="101"; rows[2]="110"; rows[3]="101"; rows[4]="110"; break;
+            case 'C': rows[0]="111"; rows[1]="100"; rows[2]="100"; rows[3]="100"; rows[4]="111"; break;
+            case 'D': rows[0]="110"; rows[1]="101"; rows[2]="101"; rows[3]="101"; rows[4]="110"; break;
+            case 'E': rows[0]="111"; rows[1]="100"; rows[2]="110"; rows[3]="100"; rows[4]="111"; break;
+            case 'F': rows[0]="111"; rows[1]="100"; rows[2]="110"; rows[3]="100"; rows[4]="100"; break;
+            case 'G': rows[0]="111"; rows[1]="100"; rows[2]="101"; rows[3]="101"; rows[4]="111"; break;
+            case 'H': rows[0]="101"; rows[1]="101"; rows[2]="111"; rows[3]="101"; rows[4]="101"; break;
+            case 'I': rows[0]="111"; rows[1]="010"; rows[2]="010"; rows[3]="010"; rows[4]="111"; break;
+            case 'K': rows[0]="101"; rows[1]="101"; rows[2]="110"; rows[3]="101"; rows[4]="101"; break;
+            case 'L': rows[0]="100"; rows[1]="100"; rows[2]="100"; rows[3]="100"; rows[4]="111"; break;
+            case 'M': rows[0]="101"; rows[1]="111"; rows[2]="111"; rows[3]="101"; rows[4]="101"; break;
+            case 'N': rows[0]="101"; rows[1]="111"; rows[2]="111"; rows[3]="111"; rows[4]="101"; break;
+            case 'O': rows[0]="111"; rows[1]="101"; rows[2]="101"; rows[3]="101"; rows[4]="111"; break;
+            case 'P': rows[0]="111"; rows[1]="101"; rows[2]="111"; rows[3]="100"; rows[4]="100"; break;
+            case 'R': rows[0]="110"; rows[1]="101"; rows[2]="110"; rows[3]="101"; rows[4]="101"; break;
+            case 'S': rows[0]="111"; rows[1]="100"; rows[2]="111"; rows[3]="001"; rows[4]="111"; break;
+            case 'T': rows[0]="111"; rows[1]="010"; rows[2]="010"; rows[3]="010"; rows[4]="010"; break;
+            case 'U': rows[0]="101"; rows[1]="101"; rows[2]="101"; rows[3]="101"; rows[4]="111"; break;
+            case 'V': rows[0]="101"; rows[1]="101"; rows[2]="101"; rows[3]="101"; rows[4]="010"; break;
+            case 'W': rows[0]="101"; rows[1]="101"; rows[2]="111"; rows[3]="111"; rows[4]="101"; break;
+            case 'Y': rows[0]="101"; rows[1]="101"; rows[2]="010"; rows[3]="010"; rows[4]="010"; break;
+            case ':': rows[0]="000"; rows[1]="010"; rows[2]="000"; rows[3]="010"; rows[4]="000"; break;
+            case '.': rows[0]="000"; rows[1]="000"; rows[2]="000"; rows[3]="000"; rows[4]="010"; break;
+            case '-': rows[0]="000"; rows[1]="000"; rows[2]="111"; rows[3]="000"; rows[4]="000"; break;
+            case '/': rows[0]="001"; rows[1]="001"; rows[2]="010"; rows[3]="100"; rows[4]="100"; break;
+            case ' ': rows[0]="000"; rows[1]="000"; rows[2]="000"; rows[3]="000"; rows[4]="000"; break;
+          }
+          for (int row = 0; row < 5; row++) {
+            for (int col = 0; col < 3; col++) {
+              if (rows[row][col] == '1') {
+                fill_rect(x + col * scale, y + row * scale, scale, scale, color);
+              }
+            }
+          }
+        };
+
+        auto draw_text_3x5 = [&](int x, int y, const std::string &text, const Color &color, int scale) {
+          int cursor = x;
+          for (char ch : text) {
+            draw_char_3x5(cursor, y, ch, color, scale);
+            cursor += 4 * scale;
+          }
+        };
+
+        auto draw_char_5x7 = [&](int x, int y, char ch, const Color &color, int scale) {
+          if (ch >= 'a' && ch <= 'z') ch -= 32;
+          const char *rows[7] = {
+            "00000", "00000", "00000", "00000", "00000", "00000", "00000"
+          };
+          switch (ch) {
+            case '0': rows[0]="01110"; rows[1]="10001"; rows[2]="10011"; rows[3]="10101"; rows[4]="11001"; rows[5]="10001"; rows[6]="01110"; break;
+            case '1': rows[0]="00100"; rows[1]="01100"; rows[2]="00100"; rows[3]="00100"; rows[4]="00100"; rows[5]="00100"; rows[6]="01110"; break;
+            case '2': rows[0]="01110"; rows[1]="10001"; rows[2]="00001"; rows[3]="00010"; rows[4]="00100"; rows[5]="01000"; rows[6]="11111"; break;
+            case '3': rows[0]="11110"; rows[1]="00001"; rows[2]="00001"; rows[3]="01110"; rows[4]="00001"; rows[5]="00001"; rows[6]="11110"; break;
+            case '4': rows[0]="00010"; rows[1]="00110"; rows[2]="01010"; rows[3]="10010"; rows[4]="11111"; rows[5]="00010"; rows[6]="00010"; break;
+            case '5': rows[0]="11111"; rows[1]="10000"; rows[2]="10000"; rows[3]="11110"; rows[4]="00001"; rows[5]="00001"; rows[6]="11110"; break;
+            case '6': rows[0]="01110"; rows[1]="10000"; rows[2]="10000"; rows[3]="11110"; rows[4]="10001"; rows[5]="10001"; rows[6]="01110"; break;
+            case '7': rows[0]="11111"; rows[1]="00001"; rows[2]="00010"; rows[3]="00100"; rows[4]="01000"; rows[5]="01000"; rows[6]="01000"; break;
+            case '8': rows[0]="01110"; rows[1]="10001"; rows[2]="10001"; rows[3]="01110"; rows[4]="10001"; rows[5]="10001"; rows[6]="01110"; break;
+            case '9': rows[0]="01110"; rows[1]="10001"; rows[2]="10001"; rows[3]="01111"; rows[4]="00001"; rows[5]="00001"; rows[6]="01110"; break;
+            case 'C': rows[0]="01110"; rows[1]="10001"; rows[2]="10000"; rows[3]="10000"; rows[4]="10000"; rows[5]="10001"; rows[6]="01110"; break;
+            case ':': rows[0]="00000"; rows[1]="00100"; rows[2]="00100"; rows[3]="00000"; rows[4]="00100"; rows[5]="00100"; rows[6]="00000"; break;
+            case '.': rows[0]="00000"; rows[1]="00000"; rows[2]="00000"; rows[3]="00000"; rows[4]="00000"; rows[5]="00100"; rows[6]="00100"; break;
+            case '-': rows[0]="00000"; rows[1]="00000"; rows[2]="00000"; rows[3]="11111"; rows[4]="00000"; rows[5]="00000"; rows[6]="00000"; break;
+          }
+          for (int row = 0; row < 7; row++) {
+            for (int col = 0; col < 5; col++) {
+              if (rows[row][col] == '1') {
+                fill_rect(x + col * scale, y + row * scale, scale, scale, color);
+              }
+            }
+          }
+        };
+
+        auto draw_text_5x7 = [&](int x, int y, const std::string &text, const Color &color, int scale) {
+          int cursor = x;
+          for (char ch : text) {
+            draw_char_5x7(cursor, y, ch, color, scale);
+            cursor += 6 * scale;
+          }
+        };
+
+        auto draw_play_icon = [&](int x, int y, const Color &color) {
+          draw_vline(x, y, 7, color);
+          draw_vline(x + 1, y + 1, 5, color);
+          draw_vline(x + 2, y + 2, 3, color);
+          draw_vline(x + 3, y + 3, 1, color);
+        };
+        auto draw_pause_icon = [&](int x, int y, const Color &color) {
+          fill_rect(x, y, 2, 7, color);
+          fill_rect(x + 4, y, 2, 7, color);
+        };
+        auto draw_stop_icon = [&](int x, int y, const Color &color) {
+          fill_rect(x, y, 6, 6, color);
+        };
+        auto draw_heater_icon = [&](int x, int y, const Color &color) {
+          draw_vline(x, y + 1, 6, color);
+          draw_vline(x + 2, y, 7, color);
+          draw_vline(x + 4, y + 1, 6, color);
+          draw_hline(x, y + 2, 5, color);
+          draw_hline(x, y + 4, 5, color);
+        };
+        auto draw_people_icon = [&](int x, int y, const Color &color) {
+          fill_rect(x + 1, y, 2, 2, color);
+          fill_rect(x, y + 2, 4, 3, color);
+          fill_rect(x + 1, y + 5, 1, 2, color);
+          fill_rect(x + 2, y + 5, 1, 2, color);
+        };
+        auto draw_sunny = [&](int x, int y) {
+          fill_rect(x + 5, y + 5, 6, 6, COLOR_YELLOW);
+          draw_hline(x + 6, y + 1, 4, COLOR_YELLOW);
+          draw_hline(x + 6, y + 14, 4, COLOR_YELLOW);
+          draw_vline(x + 1, y + 6, 4, COLOR_YELLOW);
+          draw_vline(x + 14, y + 6, 4, COLOR_YELLOW);
+          draw_pixel(x + 3, y + 3, COLOR_YELLOW);
+          draw_pixel(x + 12, y + 3, COLOR_YELLOW);
+          draw_pixel(x + 3, y + 12, COLOR_YELLOW);
+          draw_pixel(x + 12, y + 12, COLOR_YELLOW);
+        };
+        auto draw_cloud = [&](int x, int y, const Color &color) {
+          fill_rect(x + 4, y + 6, 12, 5, color);
+          fill_rect(x + 2, y + 8, 4, 3, color);
+          fill_rect(x + 14, y + 8, 4, 3, color);
+          fill_rect(x + 6, y + 4, 8, 4, color);
+        };
+        auto draw_partly = [&](int x, int y) {
+          fill_rect(x + 2, y + 2, 5, 5, COLOR_YELLOW);
+          draw_hline(x + 3, y, 3, COLOR_YELLOW);
+          draw_vline(x, y + 3, 3, COLOR_YELLOW);
+          draw_cloud(x + 4, y + 4, COLOR_WHITE);
+        };
+        auto draw_rain = [&](int x, int y) {
+          draw_cloud(x, y, COLOR_WHITE);
+          draw_vline(x + 7, y + 12, 4, COLOR_CYAN);
+          draw_vline(x + 11, y + 13, 4, COLOR_CYAN);
+          draw_vline(x + 15, y + 12, 4, COLOR_CYAN);
+        };
+        auto draw_snow = [&](int x, int y) {
+          draw_cloud(x, y, COLOR_WHITE);
+          draw_hline(x + 6, y + 13, 3, COLOR_BLUE);
+          draw_vline(x + 7, y + 12, 3, COLOR_BLUE);
+          draw_hline(x + 13, y + 13, 3, COLOR_BLUE);
+          draw_vline(x + 14, y + 12, 3, COLOR_BLUE);
+        };
+        auto draw_storm = [&](int x, int y) {
+          draw_cloud(x, y, COLOR_WHITE);
+          fill_rect(x + 10, y + 11, 2, 3, COLOR_YELLOW);
+          fill_rect(x + 9, y + 14, 3, 2, COLOR_YELLOW);
+          fill_rect(x + 10, y + 16, 2, 2, COLOR_YELLOW);
+        };
+        auto draw_fog = [&](int x, int y) {
+          draw_hline(x + 2, y + 6, 14, COLOR_WHITE);
+          draw_hline(x + 4, y + 10, 12, COLOR_WHITE);
+          draw_hline(x + 2, y + 14, 14, COLOR_WHITE);
+        };
+
+        auto get_utf8_char = [](const std::string &str, size_t &pos) -> std::string {
+          if (pos >= str.length()) return "";
+          unsigned char c = static_cast<unsigned char>(str[pos]);
+          size_t len = 1;
+          if ((c & 0xE0) == 0xC0) len = 2;
+          else if ((c & 0xF0) == 0xE0) len = 3;
+          else if ((c & 0xF8) == 0xF0) len = 4;
+          std::string result = str.substr(pos, len);
+          pos += len;
+          return result;
+        };
+        auto has_extended_chars = [](const std::string &text) -> bool {
+          for (unsigned char c : text) {
+            if (c & 0x80) return true;
+          }
+          return false;
+        };
+        auto render_lower_scrolling_text = [&](ScrollCache &cache, const std::string &text, int y_pos,
+                                               int char_width, int scroll_offset, const Color &color,
+                                               const std::string &separator) {
+          const int left = 0;
+          const int right = 63;
+          bool use_utf8_font = has_extended_chars(text);
+
+          if (!use_utf8_font) {
+            int text_width_px = text.length() * char_width;
+            if (text_width_px > 64) {
+              std::string base = text + separator;
+              std::string scroll_text = base + base;
+              int scroll_px = base.length() * char_width;
+              int offset = scroll_offset % (scroll_px + 20);
+              int effective_offset = offset < 20 ? 0 : offset - 20;
+              for (size_t i = 0; i < scroll_text.length(); i++) {
+                int char_x = left - effective_offset + i * char_width;
+                if (char_x >= left && char_x <= right) {
+                  it.printf(char_x, y_pos, id(small_font), color, TextAlign::TOP_LEFT, "%c", scroll_text[i]);
+                }
+              }
+            } else {
+              int text_center_x = left + (64 - text_width_px) / 2;
+              it.printf(text_center_x, y_pos, id(small_font), color, TextAlign::TOP_LEFT, "%s", text.c_str());
+            }
+            return;
+          }
+
+          if (cache.last_text != text || cache.last_separator != separator) {
+            cache.last_text = text;
+            cache.last_separator = separator;
+            cache.base_chars.clear();
+            cache.scroll_chars.clear();
+            size_t pos = 0;
+            while (pos < text.length()) {
+              cache.base_chars.push_back(get_utf8_char(text, pos));
+            }
+            cache.base_text_width_px = cache.base_chars.size() * char_width;
+            if (cache.base_text_width_px > 64) {
+              cache.scroll_chars = cache.base_chars;
+              for (char sep_char : separator) {
+                cache.scroll_chars.push_back(std::string(1, sep_char));
+              }
+              cache.scroll_px = cache.scroll_chars.size() * char_width;
+              auto loop_chars = cache.scroll_chars;
+              cache.scroll_chars.insert(cache.scroll_chars.end(), loop_chars.begin(), loop_chars.end());
+            } else {
+              cache.scroll_px = 0;
+            }
+          }
+
+          if (cache.base_text_width_px > 64 && cache.scroll_px > 0) {
+            int offset = scroll_offset % (cache.scroll_px + 20);
+            int effective_offset = offset < 20 ? 0 : offset - 20;
+            for (size_t i = 0; i < cache.scroll_chars.size(); i++) {
+              int char_x = left - effective_offset + i * char_width;
+              if (char_x >= left && char_x <= right) {
+                it.printf(char_x, y_pos, id(small_font_utf8), color, TextAlign::TOP_LEFT, "%s", cache.scroll_chars[i].c_str());
+              }
+            }
+          } else {
+            it.printf(32, y_pos, id(small_font_utf8), color, TextAlign::TOP_CENTER, "%s", text.c_str());
+          }
+        };
+
+        // Fast full-screen clear: fillScreenRGB888 in a single sweep instead of
+        // 4096 individual pixel writes through the virtual-panel remapper.
+        it.fill(COLOR_BLACK);
+        draw_outline(0, 0, 64, 64, COLOR_DARK);
+        draw_hline(2, 31, 60, COLOR_DARK);
+
+        auto now = id(sntp_time).now();
+        const bool time_valid = now.is_valid();
+        const bool show_ph = time_valid ? (now.second % 30) < 15 : true;
+
+        // Time (top-right)
+        char time_str[6];
+        if (time_valid) {
+          snprintf(time_str, sizeof(time_str), "%02d:%02d", now.hour, now.minute);
+        } else {
+          snprintf(time_str, sizeof(time_str), "--:--");
+        }
+        draw_text_3x5(43, 2, time_str, COLOR_CYAN, 1);
+
+        // pH/ORP box: resolve status color; flag alert if value is in red zone or missing
+        Color box_val_color = COLOR_GRAY;
+        bool box_alert = false;
+        if (show_ph) {
+          if (id(bestway_ph_sensor).has_state()) {
+            float ph = id(bestway_ph_sensor).state;
+            for (const auto &seg : ph_segments) {
+              if (ph >= seg.from && ph < seg.to) { box_val_color = seg.color; break; }
+            }
+            box_alert = (box_val_color.r == 219 && box_val_color.g == 68);
+          } else {
+            box_val_color = COLOR_DIM_RED;
+            box_alert = true;
+          }
+        } else {
+          if (id(bestway_orp_sensor).has_state()) {
+            float orp = id(bestway_orp_sensor).state;
+            for (const auto &seg : orp_segments) {
+              if (orp >= seg.from && orp < seg.to) { box_val_color = seg.color; break; }
+            }
+            box_alert = (box_val_color.r == 219 && box_val_color.g == 68);
+          } else {
+            box_val_color = COLOR_DIM_RED;
+            box_alert = true;
+          }
+        }
+        draw_outline(0, 0, 22, 21, box_alert ? COLOR_RED : COLOR_DARK);
+        it.printf(11, 2, id(small_font), COLOR_WHITE, TextAlign::TOP_CENTER, "%s", show_ph ? "pH" : "ORP");
+
+        if (show_ph) {
+          if (id(bestway_ph_sensor).has_state()) {
+            float ph = id(bestway_ph_sensor).state;
+            char ph_str[5];
+            snprintf(ph_str, sizeof(ph_str), "%.1f", ph);
+            it.printf(11, 10, id(small_font), box_val_color, TextAlign::TOP_CENTER, "%s", ph_str);
+            for (const auto &seg : ph_segments) {
+              int xs = 2 + int((seg.from - 6.0f) / 3.0f * 17.0f);
+              int xe = 2 + int((seg.to - 6.0f) / 3.0f * 17.0f);
+              fill_rect(xs, 18, std::max(1, xe - xs), 2, seg.color);
+            }
+            int ph_x = 2 + int((ph - 6.0f) / 3.0f * 17.0f);
+            draw_vline(ph_x, 17, 3, COLOR_WHITE);
+          } else {
+            it.printf(11, 10, id(small_font), COLOR_DIM_RED, TextAlign::TOP_CENTER, "---");
+            fill_rect(2, 18, 17, 2, COLOR_DIM_RED);
+          }
+        } else {
+          if (id(bestway_orp_sensor).has_state()) {
+            float orp = id(bestway_orp_sensor).state;
+            char orp_str[5];
+            snprintf(orp_str, sizeof(orp_str), "%d", (int)orp);
+            it.printf(11, 10, id(small_font), box_val_color, TextAlign::TOP_CENTER, "%s", orp_str);
+            for (const auto &seg : orp_segments) {
+              int xs = 2 + int((seg.from - 300.0f) / 700.0f * 17.0f);
+              int xe = 2 + int((seg.to - 300.0f) / 700.0f * 17.0f);
+              fill_rect(xs, 18, std::max(1, xe - xs), 2, seg.color);
+            }
+            int orp_x = 2 + int((orp - 300.0f) / 700.0f * 17.0f);
+            draw_vline(orp_x, 17, 3, COLOR_WHITE);
+          } else {
+            it.printf(11, 10, id(small_font), COLOR_DIM_RED, TextAlign::TOP_CENTER, "---");
+            fill_rect(2, 18, 17, 2, COLOR_DIM_RED);
+          }
+        }
+
+        // Large temperature: integer part scale-2, decimal+unit scale-1 to the right
+        Color temp_color = COLOR_RED;
+        std::string temp_int_str = "--";
+        std::string temp_dec_str = ".-";
+        if (id(bestway_temperature_sensor).has_state()) {
+          float temp = id(bestway_temperature_sensor).state;
+          int temp_x10 = (int)(temp * 10.0f + 0.5f);
+          int t_int = temp_x10 / 10;
+          int t_dec = temp_x10 % 10;
+          char int_buf[4], dec_buf[4];
+          snprintf(int_buf, sizeof(int_buf), "%d", t_int);
+          snprintf(dec_buf, sizeof(dec_buf), ".%d", t_dec);
+          temp_int_str = int_buf;
+          temp_dec_str = dec_buf;
+          temp_color = temp > 27.0f ? COLOR_RED : (temp > 22.0f ? COLOR_YELLOW : COLOR_BLUE);
+        }
+        draw_text_5x7(27, 9, temp_int_str, temp_color, 2);
+        int dec_x = 27 + (int)temp_int_str.length() * 12;
+        draw_text_5x7(dec_x, 16, temp_dec_str, temp_color, 1);
+
+        // People icon + count (below pH box, left side)
+        if (id(pooldetect_person_active_count).has_state()) {
+          draw_people_icon(2, 22, COLOR_GRAY);
+          char people_text[3];
+          snprintf(people_text, sizeof(people_text), "%d", (int) id(pooldetect_person_active_count).state);
+          draw_text_3x5(8, 22, people_text, COLOR_WHITE, 2);
+        }
+
+        // RPM bar — bordered track, 2px interior (18px = 0–2900 RPM)
+        draw_outline(22, 26, 20, 4, COLOR_GRAY);
+        fill_rect(23, 27, 18, 2, COLOR_DARK);
+        if (id(pool_pump_rpm).has_state()) {
+          int rpm_width = std::min(18, std::max(0, int(id(pool_pump_rpm).state / 2900.0f * 18.0f)));
+          fill_rect(23, 27, rpm_width, 2, COLOR_GRAY);
+        }
+
+        // Power bar — bordered track, 2px interior (18px = 0–2000 W), dimmed 30%
+        draw_outline(43, 26, 20, 4, COLOR_DIM_PWR);
+        fill_rect(44, 27, 18, 2, COLOR_DARK);
+        if (id(pool_power_consumption).has_state()) {
+          int power_width = std::min(18, std::max(0, int(id(pool_power_consumption).state / 2000.0f * 18.0f)));
+          fill_rect(44, 27, power_width, 2, COLOR_DIM_PWR);
+        }
+
+        auto draw_page_header = [&](const std::string &title) {
+          draw_text_3x5(3, 35, title, COLOR_LIGHT, 1);
+          draw_hline(3, 40, 58, COLOR_DARK);
+        };
+        auto render_metric_row = [&](int y, const std::string &label, const std::string &value, const Color &color) {
+          draw_text_3x5(5, y, label, COLOR_LIGHT, 1);
+          draw_text_3x5(34, y, value, color, 1);
+        };
+
+        if (id(display_page) == 0) {
+          draw_page_header("SUMMARY");
+          char air_text[8];
+          if (id(weather_temp).has_state()) snprintf(air_text, sizeof(air_text), "%.1f", id(weather_temp).state);
+          else snprintf(air_text, sizeof(air_text), "--.-");
+          render_metric_row(44, "AIR", air_text, COLOR_WHITE);
+          std::string roof_text = "--";
+          if (id(pool_roof_classification).has_state()) roof_text = id(pool_roof_classification).state;
+          render_metric_row(50, "ROOF", roof_text, COLOR_CYAN);
+          const bool light_on = id(pool_light).state;
+          render_metric_row(56, "LIGHT", light_on ? "ON" : "OFF", light_on ? COLOR_GREEN : COLOR_LIGHT);
+        } else if (id(display_page) == 1) {
+          draw_page_header("SPOTIFY");
+          // Volume bar replaces separator line (drawn on top of dark line at y=40)
+          if (id(altan_volume).has_state()) {
+            int vol_width = std::min(58, std::max(0, int(id(altan_volume).state * 58.0f)));
+            fill_rect(3, 40, vol_width, 1, COLOR_GREEN);
+          }
+          const std::string artist = id(spotify_media_artist).has_state() ? id(spotify_media_artist).state : "No artist";
+          const std::string title = id(spotify_media_title).has_state() ? id(spotify_media_title).state : "No title";
+          render_lower_scrolling_text(artist_cache, artist, 43, 5, id(scroll_offset_artist), COLOR_WHITE, "   ");
+          render_lower_scrolling_text(title_cache, title, 53, 5, id(scroll_offset_title), COLOR_CYAN, "   ");
+        } else if (id(display_page) == 2) {
+          draw_page_header("MESSAGE");
+          if (id(custom_display_text).has_state()) {
+            render_lower_scrolling_text(custom_cache, id(custom_display_text).state, 50, 5, id(scroll_offset_title), COLOR_WHITE, "     ");
+          } else {
+            it.printf(32, 50, id(small_font), COLOR_RED, TextAlign::TOP_CENTER, "No message");
+          }
+        } else if (id(display_page) == 3) {
+          draw_page_header("WEATHER");
+          std::string cond = id(weather_condition).has_state() ? id(weather_condition).state : "";
+          std::string cond_label = "UNKNOWN";
+          if (cond == "sunny") {
+            draw_sunny(4, 42);
+            cond_label = "SUNNY";
+          } else if (cond == "partlycloudy") {
+            draw_partly(4, 42);
+            cond_label = "PARTLY";
+          } else if (cond == "cloudy") {
+            draw_cloud(4, 42, COLOR_WHITE);
+            cond_label = "CLOUDY";
+          } else if (cond == "rainy") {
+            draw_rain(4, 42);
+            cond_label = "RAIN";
+          } else if (cond == "snowy") {
+            draw_snow(4, 42);
+            cond_label = "SNOW";
+          } else if (cond == "lightning") {
+            draw_storm(4, 42);
+            cond_label = "STORM";
+          } else if (cond == "fog") {
+            draw_fog(4, 42);
+            cond_label = "FOG";
+          } else {
+            draw_cloud(4, 42, COLOR_GRAY);
+          }
+
+          std::string out = "--.-";
+          if (id(weather_temp).has_state()) {
+            char out_buf[8];
+            snprintf(out_buf, sizeof(out_buf), "%.1f", id(weather_temp).state);
+            out = out_buf;
+          }
+          draw_text_5x7(27, 44, out, COLOR_WHITE, 1);
+          draw_text_3x5(23, 55, cond_label, COLOR_CYAN, 1);
+        } else if (id(display_page) == 4) {
+          draw_page_header("STATS");
+          char peak_people[5];
+          char session_mins[7];
+          if (id(pool_max_people).has_state()) snprintf(peak_people, sizeof(peak_people), "%d", (int) id(pool_max_people).state);
+          else snprintf(peak_people, sizeof(peak_people), "--");
+          if (id(current_pool_session_duration).has_state()) snprintf(session_mins, sizeof(session_mins), "%d m", (int) id(current_pool_session_duration).state);
+          else snprintf(session_mins, sizeof(session_mins), "--");
+          render_metric_row(46, "PEAK", peak_people, COLOR_YELLOW);
+          render_metric_row(56, "TID", session_mins, COLOR_CYAN);
+        } else if (id(display_page) == 5) {
+          draw_page_header("TIMER");
+          unsigned long total_tenths = id(stop_timer_millis) / 100;
+          unsigned long minutes = total_tenths / 600;
+          unsigned long seconds = (total_tenths / 10) % 60;
+          char timer_buf[6];
+          snprintf(timer_buf, sizeof(timer_buf), "%02lu:%02lu", minutes, seconds);
+          draw_text_5x7(9, 45, timer_buf, COLOR_RED, 2);
+        } else if (id(display_page) == 6) {
+          draw_page_header("DEBUG");
+          char wifi_buf[6];
+          char temp_buf[6];
+          char up_buf[6];
+          if (id(wifi_strength).has_state()) snprintf(wifi_buf, sizeof(wifi_buf), "%d", (int) id(wifi_strength).state);
+          else snprintf(wifi_buf, sizeof(wifi_buf), "--");
+          if (id(esp32_temp).has_state()) snprintf(temp_buf, sizeof(temp_buf), "%d", (int) id(esp32_temp).state);
+          else snprintf(temp_buf, sizeof(temp_buf), "--");
+          snprintf(up_buf, sizeof(up_buf), "%d", (int) (millis() / 60000UL));
+          render_metric_row(44, "WIFI", wifi_buf, COLOR_WHITE);
+          render_metric_row(50, "TEMP", temp_buf, COLOR_BLUE);
+          render_metric_row(56, "UP", up_buf, COLOR_GREEN);
+        }

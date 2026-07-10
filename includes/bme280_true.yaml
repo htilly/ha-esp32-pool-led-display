@@ -1,0 +1,12 @@
+# BME280-sensor (temperatur, tryck, luftfuktighet) – används när sensorn är ansluten
+sensor:
+  - platform: bme280_i2c
+    temperature:
+      name: "Pool LED Inner Temperatur"
+      id: esp32_temp
+    pressure:
+      name: "Pool LED Inner Lufttryck"
+    humidity:
+      name: "Pool LED Inner Luftfuktighet"
+    address: 0x76  # Ändra till 0x77 om sensorn inte hittas
+    update_interval: 60s

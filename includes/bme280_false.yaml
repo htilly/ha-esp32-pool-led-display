@@ -1,0 +1,10 @@
+# Dummy-sensor när BME280 inte är ansluten – esp32_temp finns alltid så display-koden kompilerar
+sensor:
+  - platform: template
+    name: "Pool LED Inner Temperatur (ej ansluten)"
+    id: esp32_temp
+    accuracy_decimals: 1
+    unit_of_measurement: "°C"
+    lambda: |-
+      return NAN;
+    update_interval: 60s

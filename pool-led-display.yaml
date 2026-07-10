@@ -6,11 +6,13 @@ esp32:
   board: esp32dev
   framework:
     type: arduino
+    advanced:
+      minimum_chip_revision: "3.1"
+      sram1_as_iram: true
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-
 
 api:
   encryption:
@@ -19,6 +21,7 @@ api:
 ota:
   platform: esphome
   password: !secret ota_pool_led-display
+
 logger:
   level: INFO
   logs:
@@ -30,92 +33,64 @@ i2c:
   scl: 22
   scan: false
 
-captive_portal:
 
 external_components:
   - source: github://TillFleisch/ESPHome-HUB75-MatrixDisplayWrapper@main
 
 packages:
   wifi_diag: !include includes/common/wifi_diagnostics.yaml
-  
+
 font:
   - file: "fonts/spleen-5x8.bdf"
     id: small_font
     size: 8
 
   - file: "fonts/Roboto-Regular.ttf"
+    id: small_font_utf8
+    size: 8
+    glyphs:
+      [
+        " !\"%()+=,-_.:°/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+        "ÅÄÖåäö"
+      ]
+
+  - file: "fonts/Roboto-Regular.ttf"
     id: big_font
     size: 16
-
-  - file: "fonts/tom-thumb.bdf"
-    id: small_tom
-    size: 6
-
-  - file: "fonts/6_10.bdf"
-    id: F6_10
-    size: 10
+    glyphs:
+      [
+        " !\"%()+=,-_.:°/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+        "ÅÄÖåäö"
+      ]
 
 image:
-  - file: https://www.tilly.se/logo_spotify/icons8-spotify-64.png
-    id: alert_icon
-    type: grayscale
-    transparency: alpha_channel
-    resize: 16x16
-
   - file: https://www.tilly.se/radiator.png
     id: heater_icon
     type: grayscale
     transparency: alpha_channel
     resize: 4x4
 
-  - file: "images/weather/sunny.png"
-    id: icon_sunny
-    type: grayscale
-    resize: 16x16
-    transparency: alpha_channel
 
-  - file: "images/weather/partlycloudy.png"
-    id: icon_partlycloudy
-    type: grayscale
-    resize: 16x16
-    transparency: alpha_channel
-
-  - file: "images/weather/cloudy.png"
-    id: icon_cloudy
-    type: grayscale
-    resize: 16x16
-    transparency: alpha_channel
-
-  - file: "images/weather/rain.png"
-    id: icon_rainy
-    type: grayscale
-    resize: 16x16
-    transparency: alpha_channel
-
-  - file: "images/weather/snow.png"
-    id: icon_snowy
-    type: grayscale
-    resize: 16x16
-    transparency: alpha_channel
-
-  - file: "images/weather/tstorms.png"
-    id: icon_lightning
-    type: grayscale
-    resize: 16x16
-    transparency: alpha_channel
-
-  - file: "images/weather/fog.png"
-    id: icon_fog
-    type: grayscale
-    resize: 16x16
-    transparency: alpha_channel
+  # Altan media player control icons
+  - file: mdi:play
+    id: icon_play
+    type: BINARY
+    resize: 8x8
+  
+  - file: mdi:pause
+    id: icon_pause
+    type: BINARY
+    resize: 8x8
+  
+  - file: mdi:stop
+    id: icon_stop
+    type: BINARY
+    resize: 8x8
 
 time:
   - platform: sntp
     id: sntp_time
     timezone: Europe/Stockholm
-
-
 
 globals:
   - id: display_page
@@ -142,9 +117,6 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
-  
-
-
 
 interval:
   - interval: 30s
@@ -169,15 +141,13 @@ interval:
             }
           }
 
-
   - interval: 50ms
     then:
       - lambda: |-
-          // Only update scroll offsets when relevant pages are active
-          if (id(display_page) == 0 && id(display_spotify_enabled).state) {
+          if (id(display_page) == 0) {
             id(scroll_offset_artist) += 1;
             id(scroll_offset_title) += 1;
-          } else if (id(display_page) == 1 && id(display_custom_enabled).state) {
+          } else if (id(display_page) == 1) {
             id(scroll_offset_title) += 1;
           }
 
@@ -200,16 +170,13 @@ interval:
             id(stop_timer_millis) = millis() - start_time;
           }
 
-
 sensor:
-
-
   - platform: wifi_signal
     name: "Pool LED WiFi Signalstyrka"
     id: wifi_strength
     update_interval: 30s
 
-# BME280-sensor (temperatur, tryck, luftfuktighet)
+  # BME280 – avkommentera detta block om sensorn ÄR ansluten (och kommentera bort dummy-blocket nedan)
   - platform: bme280_i2c
     temperature:
       name: "Pool LED Inner Temperatur"
@@ -218,8 +185,17 @@ sensor:
       name: "Pool LED Inner Lufttryck"
     humidity:
       name: "Pool LED Inner Luftfuktighet"
-    address: 0x76  # Ändra till 0x77 om sensorn inte hittas
+    address: 0x76
     update_interval: 60s
+  # Dummy – används när BME280 INTE är ansluten (kommentera bort om du använder BME280 ovan)
+  #- platform: template
+  #  name: "Pool LED Inner Temperatur (ej ansluten)"
+  #  id: esp32_temp
+  #  accuracy_decimals: 1
+  #  unit_of_measurement: "°C"
+  #  lambda: |-
+  #    return NAN;
+  #  update_interval: 60s
 
   - platform: homeassistant
     entity_id: sensor.pool_switch_electric_consumption_w
@@ -267,27 +243,12 @@ sensor:
     id: weather_temp
 
   - platform: homeassistant
-    entity_id: weather.smhi_home
-    attribute: humidity
-    id: weather_humidity
-
-  - platform: homeassistant
-    entity_id: weather.smhi_home
-    attribute: wind_speed
-    id: weather_wind_speed
-
-  - platform: homeassistant
-    entity_id: weather.smhi_home
-    attribute: wind_bearing
-    id: weather_wind_bearing
-
-  - platform: homeassistant
-    entity_id: weather.smhi_home
-    attribute: cloud_coverage
-    id: weather_clouds
+    entity_id: media_player.altan
+    attribute: volume_level
+    id: altan_volume
+    internal: true
 
 binary_sensor:
-
   - platform: homeassistant
     entity_id: input_boolean.pool_led_display_stop_timer
     id: display_stop_timer_enabled
@@ -306,26 +267,85 @@ binary_sensor:
           // Don't change page here; HA automation handles the 2 min grace + restore
           id(stop_timer_active) = false;
 
-
   - platform: homeassistant
     entity_id: input_boolean.pool_led_display_spotify
     id: display_spotify_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 0;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 0) {
+            if (id(display_custom_enabled).state) id(display_page) = 1;
+            else if (id(display_weather_enabled).state) id(display_page) = 2;
+            else if (id(display_stats_enabled).state) id(display_page) = 3;
+            else if (id(display_stop_timer_enabled).state) id(display_page) = 4;
+            else if (id(display_debug_enabled).state) id(display_page) = 5;
+          }
 
   - platform: homeassistant
     entity_id: input_boolean.pool_led_display_custom_message
     id: display_custom_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 1;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 1) {
+            if (id(display_spotify_enabled).state) id(display_page) = 0;
+            else if (id(display_weather_enabled).state) id(display_page) = 2;
+            else if (id(display_stats_enabled).state) id(display_page) = 3;
+            else if (id(display_stop_timer_enabled).state) id(display_page) = 4;
+            else if (id(display_debug_enabled).state) id(display_page) = 5;
+          }
 
   - platform: homeassistant
     entity_id: input_boolean.pool_led_display_weather
     id: display_weather_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 2;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 2) {
+            if (id(display_spotify_enabled).state) id(display_page) = 0;
+            else if (id(display_custom_enabled).state) id(display_page) = 1;
+            else if (id(display_stats_enabled).state) id(display_page) = 3;
+            else if (id(display_stop_timer_enabled).state) id(display_page) = 4;
+            else if (id(display_debug_enabled).state) id(display_page) = 5;
+          }
 
   - platform: homeassistant
     entity_id: input_boolean.pool_led_display_stats
     id: display_stats_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 3;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 3) {
+            if (id(display_spotify_enabled).state) id(display_page) = 0;
+            else if (id(display_custom_enabled).state) id(display_page) = 1;
+            else if (id(display_weather_enabled).state) id(display_page) = 2;
+            else if (id(display_stop_timer_enabled).state) id(display_page) = 4;
+            else if (id(display_debug_enabled).state) id(display_page) = 5;
+          }
 
   - platform: homeassistant
     entity_id: input_boolean.pool_led_display_debug
     id: display_debug_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 5;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 5) {
+            if (id(display_spotify_enabled).state) id(display_page) = 0;
+            else if (id(display_custom_enabled).state) id(display_page) = 1;
+            else if (id(display_weather_enabled).state) id(display_page) = 2;
+            else if (id(display_stats_enabled).state) id(display_page) = 3;
+            else if (id(display_stop_timer_enabled).state) id(display_page) = 4;
+          }
 
 text_sensor:
   - platform: homeassistant
@@ -351,8 +371,8 @@ text_sensor:
     id: custom_display_text
 
   - platform: homeassistant
-    entity_id: sensor.pool_session_start
-    id: pool_session_start
+    entity_id: media_player.altan
+    id: altan_media_state
 
 switch:
   - platform: hub75_matrix_display
@@ -405,9 +425,15 @@ display:
         static const Color COLOR_TIME(100, 200, 255);
         static const Color COLOR_SPOTIFY_TITLE(0, 200, 255);
         static const Color COLOR_GRAY(128, 128, 128);
+        static const Color COLOR_DARK_GRAY(64, 64, 64);
         static const Color COLOR_DEBUG_YELLOW(255, 255, 0);
         static const Color COLOR_DEBUG_BLUE(200, 200, 255);
         static const Color COLOR_DEBUG_GREEN(150, 255, 150);
+        // Weather icon colors
+        static const Color COLOR_SUN_YELLOW(255, 255, 100);  // Light yellow for sun
+        static const Color COLOR_RAIN_BLUE(100, 150, 255);  // Light blue for rain
+        static const Color COLOR_SNOW_WHITE(255, 255, 255);  // White for snow
+        static const Color COLOR_LIGHTNING_YELLOW(255, 255, 50);  // Bright yellow for lightning
 
         // Static segment definitions (cached, not recreated every frame)
         struct Segment { float from; float to; Color color; };
@@ -425,17 +451,29 @@ display:
                 {650, 900, Color(255, 166, 0)},
                 {900, 1000, Color(219, 68, 55)}
         };
+        struct ScrollCache {
+            std::string last_text;
+            std::string last_separator;
+            std::vector<std::string> base_chars;
+            std::vector<std::string> scroll_chars;
+            int base_text_width_px = 0;
+            int scroll_px = 0;
+        };
+        static ScrollCache artist_cache;
+        static ScrollCache title_cache;
+        static ScrollCache custom_cache;
 
         // Clear right-hand side area
         it.filled_rectangle(65, 0, 63, 32, COLOR_BLACK);
 
-        int now_seconds = id(sntp_time).now().second;
+        auto now = id(sntp_time).now();
+        int now_seconds = now.is_valid() ? now.second : 0;
         bool show_ph = (now_seconds % 30) < 15;
 
         // Show pH or ORP with segmented color bar and value indicator
         if (show_ph && id(bestway_ph_sensor).has_state()) {
                 float ph = id(bestway_ph_sensor).state;
-                it.printf(2, 0, id(small_font), COLOR_WHITE, TextAlign::TOP_LEFT, "pH :%.1f", ph);
+                it.printf(2, 0, id(small_font), COLOR_WHITE, TextAlign::TOP_LEFT, "pH %.1f", ph);
 
                 // Segmented bar (6.0–9.0 = 64px range)
                 for (auto& seg : ph_segments) {
@@ -450,7 +488,7 @@ display:
                 }
         } else if (!show_ph && id(bestway_orp_sensor).has_state()) {
                 float orp = id(bestway_orp_sensor).state;
-                it.printf(2, 0, id(small_font), COLOR_WHITE, TextAlign::TOP_LEFT, "ORP:%.0f", orp);
+                it.printf(2, 0, id(small_font), COLOR_WHITE, TextAlign::TOP_LEFT, "ORP %.0f", orp);
 
                 // Segmented bar (300–1000 = 64px range)
                 for (auto& seg : orp_segments) {
@@ -464,13 +502,11 @@ display:
                         it.line(orp_x, 8, orp_x, 11, COLOR_WHITE);
                 }
         } else {
-                it.printf(2, 0, id(small_font), COLOR_WHITE, TextAlign::TOP_LEFT, show_ph ? "pH: --" : "ORP: --");
+                it.printf(2, 0, id(small_font), COLOR_WHITE, TextAlign::TOP_LEFT, show_ph ? "pH --" : "ORP --");
                 it.filled_rectangle(0, 9, 64, 2, COLOR_DIM_RED);
         }
 
-
         // Show current time (top right)
-        auto now = id(sntp_time).now();
         if (now.is_valid()) {
             char time_str[6];
             snprintf(time_str, sizeof(time_str), "%02d:%02d", now.hour, now.minute);
@@ -497,6 +533,13 @@ display:
                 : COLOR_BLUE;
             it.printf(2, 13, id(big_font), temp_color, TextAlign::TOP_LEFT, "%.1f°C", temp);
 
+            if (id(heater_mode).has_state() && (id(heater_mode).state == "auto" || id(heater_mode).state == "heat")) {
+                it.image(46, 24, id(heater_icon), COLOR_RED);
+            }
+        } else {
+            it.printf(2, 13, id(big_font), COLOR_RED, TextAlign::TOP_LEFT, "--°C");
+        }
+
         // Power consumption bar (red), under temperature
         if (id(pool_power_consumption).has_state()) {
             float watts = id(pool_power_consumption).state;
@@ -507,13 +550,6 @@ display:
             it.filled_rectangle(0, 29, 64, 1, COLOR_DIM_RED);
         }
 
-            if (id(heater_mode).has_state() && (id(heater_mode).state == "auto" || id(heater_mode).state == "heat")) {
-                it.image(54, 24, id(heater_icon), COLOR_RED);
-            }
-        } else {
-            it.printf(2, 13, id(big_font), COLOR_RED, TextAlign::TOP_LEFT, "--°C");
-        }
-
         // Always show number of people in pool (bottom left corner)
         if (id(pooldetect_person_active_count).has_state()) {
             it.printf(54, 24, id(small_font), COLOR_WHITE, TextAlign::BOTTOM_LEFT, "%d", (int)id(pooldetect_person_active_count).state);
@@ -521,38 +557,229 @@ display:
             it.printf(54, 24, id(small_font), COLOR_RED, TextAlign::BOTTOM_LEFT, "--");
         }
 
+        // === NEW: Altan media player controls (lower right of left panel) ===
+        
+        // Volume bar (far right edge of left panel, x=63, 1px wide, max 15px height, from bottom up)
+        if (id(altan_volume).has_state()) {
+            float volume = id(altan_volume).state;
+            if (volume < 0.0f) volume = 0.0f;
+            if (volume > 1.0f) volume = 1.0f;
+            int bar_height = int(volume * 15);
+            // Draw from bottom (y=31) upwards
+            it.filled_rectangle(63, 31 - bar_height, 1, bar_height, COLOR_DARK_GRAY);
+        }
+
+        // Playback state icon (lower right corner of left panel, 8x8px, dark grey, just left of volume bar)
+        if (id(altan_media_state).has_state()) {
+            const std::string& state = id(altan_media_state).state;
+            if (state == "playing") {
+                it.image(52, 24, id(icon_play), COLOR_DARK_GRAY);
+            } else if (state == "paused") {
+                it.image(52, 24, id(icon_pause), COLOR_DARK_GRAY);
+            } else if (state == "idle" || state == "off") {
+                it.image(52, 24, id(icon_stop), COLOR_DARK_GRAY);
+            }
+        }
+
+        // === END NEW SECTION ===
+
         // Common constants for right panel (cached at lambda start)
         const int left_bound = 65;
         const int right_bound = 127;
         const int max_width_px = right_bound - left_bound;
         const int center_x = left_bound + (right_bound - left_bound) / 2;
 
-        // Reusable scrolling text function (optimized with const references and cached calculations)
-        auto render_scrolling_text = [&](const std::string& text, int y_pos, int char_width, 
-                                          int& scroll_offset_id, const Color& color, 
-                                          const std::string& separator, auto& font_id) {
-            // Cache text length to avoid repeated calls
-            size_t text_len = text.length();
-            int text_width_px = text_len * char_width;
-            
-            if (text_width_px > max_width_px) {
-                // Pre-calculate scroll strings
-                std::string base = text + separator;
-                std::string scroll_text = base + base;
-                int scroll_px = base.length() * char_width;
-                int offset = scroll_offset_id % (scroll_px + 20);
-                int effective_offset = offset < 20 ? 0 : offset - 20;
-                size_t scroll_len = scroll_text.length();
+        // Pixel-art weather icon drawing functions (using rectangles and lines for pixel-perfect display)
+        auto draw_sunny = [&](int x, int y) {
+            // Sun: square center with rays (pixel-art style)
+            it.filled_rectangle(x + 6, y + 6, 4, 4, COLOR_SUN_YELLOW);
+            // Rays (8 directions) - light yellow
+            it.line(x + 8, y + 0, x + 8, y + 2, COLOR_SUN_YELLOW);  // Top
+            it.line(x + 8, y + 14, x + 8, y + 16, COLOR_SUN_YELLOW);  // Bottom
+            it.line(x + 0, y + 8, x + 2, y + 8, COLOR_SUN_YELLOW);  // Left
+            it.line(x + 14, y + 8, x + 16, y + 8, COLOR_SUN_YELLOW);  // Right
+            it.line(x + 2, y + 2, x + 3, y + 3, COLOR_SUN_YELLOW);  // Top-left
+            it.line(x + 13, y + 13, x + 14, y + 14, COLOR_SUN_YELLOW);  // Bottom-right
+            it.line(x + 13, y + 2, x + 14, y + 3, COLOR_SUN_YELLOW);  // Top-right
+            it.line(x + 2, y + 13, x + 3, y + 14, COLOR_SUN_YELLOW);  // Bottom-left
+        };
 
-                for (size_t i = 0; i < scroll_len; i++) {
+        auto draw_cloudy = [&](int x, int y) {
+            // Simple cloud shape (pixel-art)
+            it.filled_rectangle(x + 2, y + 6, 3, 3, COLOR_WHITE);
+            it.filled_rectangle(x + 5, y + 5, 5, 4, COLOR_WHITE);
+            it.filled_rectangle(x + 10, y + 6, 3, 3, COLOR_WHITE);
+            it.filled_rectangle(x + 3, y + 9, 2, 2, COLOR_WHITE);
+            it.filled_rectangle(x + 11, y + 9, 2, 2, COLOR_WHITE);
+        };
+
+        auto draw_partlycloudy = [&](int x, int y) {
+            // Sun partially behind cloud (pixel-art)
+            it.filled_rectangle(x + 3, y + 3, 4, 4, COLOR_SUN_YELLOW);  // Sun - yellow
+            it.line(x + 5, y + 1, x + 5, y + 2, COLOR_SUN_YELLOW);
+            it.line(x + 5, y + 8, x + 5, y + 9, COLOR_SUN_YELLOW);
+            it.line(x + 1, y + 5, x + 2, y + 5, COLOR_SUN_YELLOW);
+            it.line(x + 8, y + 5, x + 9, y + 5, COLOR_SUN_YELLOW);
+            // Cloud covering part of sun - white
+            it.filled_rectangle(x + 7, y + 8, 3, 3, COLOR_WHITE);
+            it.filled_rectangle(x + 10, y + 7, 5, 4, COLOR_WHITE);
+            it.filled_rectangle(x + 13, y + 8, 3, 3, COLOR_WHITE);
+        };
+
+        auto draw_rainy = [&](int x, int y) {
+            // Cloud (pixel-art) - white
+            it.filled_rectangle(x + 2, y + 6, 3, 3, COLOR_WHITE);
+            it.filled_rectangle(x + 5, y + 5, 5, 4, COLOR_WHITE);
+            it.filled_rectangle(x + 10, y + 6, 3, 3, COLOR_WHITE);
+            it.filled_rectangle(x + 3, y + 9, 2, 2, COLOR_WHITE);
+            it.filled_rectangle(x + 11, y + 9, 2, 2, COLOR_WHITE);
+            // Rain drops - light blue
+            it.line(x + 6, y + 10, x + 6, y + 12, COLOR_RAIN_BLUE);
+            it.line(x + 9, y + 11, x + 9, y + 13, COLOR_RAIN_BLUE);
+            it.line(x + 12, y + 10, x + 12, y + 12, COLOR_RAIN_BLUE);
+        };
+
+        auto draw_snowy = [&](int x, int y) {
+            // Cloud (pixel-art) - white
+            it.filled_rectangle(x + 2, y + 6, 3, 3, COLOR_WHITE);
+            it.filled_rectangle(x + 5, y + 5, 5, 4, COLOR_WHITE);
+            it.filled_rectangle(x + 10, y + 6, 3, 3, COLOR_WHITE);
+            it.filled_rectangle(x + 3, y + 9, 2, 2, COLOR_WHITE);
+            it.filled_rectangle(x + 11, y + 9, 2, 2, COLOR_WHITE);
+            // Snowflakes (simple crosses) - white
+            it.line(x + 6, y + 10, x + 6, y + 12, COLOR_SNOW_WHITE);
+            it.line(x + 5, y + 11, x + 7, y + 11, COLOR_SNOW_WHITE);
+            it.line(x + 9, y + 11, x + 9, y + 13, COLOR_SNOW_WHITE);
+            it.line(x + 8, y + 12, x + 10, y + 12, COLOR_SNOW_WHITE);
+            it.line(x + 12, y + 10, x + 12, y + 12, COLOR_SNOW_WHITE);
+            it.line(x + 11, y + 11, x + 13, y + 11, COLOR_SNOW_WHITE);
+        };
+
+        auto draw_lightning = [&](int x, int y) {
+            // Cloud (pixel-art) - white
+            it.filled_rectangle(x + 2, y + 6, 3, 3, COLOR_WHITE);
+            it.filled_rectangle(x + 5, y + 5, 5, 4, COLOR_WHITE);
+            it.filled_rectangle(x + 10, y + 6, 3, 3, COLOR_WHITE);
+            it.filled_rectangle(x + 3, y + 9, 2, 2, COLOR_WHITE);
+            it.filled_rectangle(x + 11, y + 9, 2, 2, COLOR_WHITE);
+            // Lightning bolt (zigzag pixel-art) - bright yellow
+            it.filled_rectangle(x + 9, y + 8, 2, 1, COLOR_LIGHTNING_YELLOW);
+            it.filled_rectangle(x + 10, y + 9, 1, 2, COLOR_LIGHTNING_YELLOW);
+            it.filled_rectangle(x + 9, y + 11, 2, 1, COLOR_LIGHTNING_YELLOW);
+            it.filled_rectangle(x + 10, y + 12, 1, 2, COLOR_LIGHTNING_YELLOW);
+        };
+
+        auto draw_fog = [&](int x, int y) {
+            // Horizontal fog lines
+            it.filled_rectangle(x + 2, y + 4, 12, 2, COLOR_WHITE);
+            it.filled_rectangle(x + 4, y + 8, 10, 2, COLOR_WHITE);
+            it.filled_rectangle(x + 2, y + 12, 12, 2, COLOR_WHITE);
+        };
+
+        // Helper function to get the next UTF-8 character as a substring
+        auto get_utf8_char = [](const std::string& str, size_t& pos) -> std::string {
+            if (pos >= str.length()) return "";
+            
+            // Calculate UTF-8 character length
+            unsigned char c = static_cast<unsigned char>(str[pos]);
+            size_t len;
+            if (c < 0x80) {
+                len = 1;  // ASCII
+            } else if ((c & 0xE0) == 0xC0) {
+                len = 2;  // 2-byte UTF-8 (ä, ö, å)
+            } else if ((c & 0xF0) == 0xE0) {
+                len = 3;  // 3-byte UTF-8
+            } else if ((c & 0xF8) == 0xF0) {
+                len = 4;  // 4-byte UTF-8
+            } else {
+                len = 1;  // Fallback
+            }
+            
+            std::string result = str.substr(pos, len);
+            pos += len;
+            return result;
+        };
+
+        auto has_extended_chars = [](const std::string& text) -> bool {
+            for (unsigned char c : text) {
+                if (c & 0x80) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        // Reusable scrolling text function with UTF-8 support
+        auto render_scrolling_text = [&](ScrollCache& cache, const std::string& text, int y_pos,
+                                          int char_width, int scroll_offset_id, const Color& color,
+                                          const std::string& separator, auto& primary_font_id,
+                                          auto& utf8_font_id) {
+            bool use_utf8_font = has_extended_chars(text);
+            auto& active_font = use_utf8_font ? utf8_font_id : primary_font_id;
+
+            if (!use_utf8_font) {
+                int text_width_px = text.length() * char_width;
+
+                if (text_width_px > max_width_px) {
+                    std::string base = text + separator;
+                    std::string scroll_text = base + base;
+                    int scroll_px = base.length() * char_width;
+                    int offset = scroll_offset_id % (scroll_px + 20);
+                    int effective_offset = offset < 20 ? 0 : offset - 20;
+
+                    for (size_t i = 0; i < scroll_text.length(); i++) {
+                        int char_x = left_bound - effective_offset + i * char_width;
+                        if (char_x >= left_bound && char_x <= right_bound) {
+                            it.printf(char_x, y_pos, primary_font_id, color, TextAlign::TOP_LEFT, "%c", scroll_text[i]);
+                        }
+                    }
+                } else {
+                    int text_center_x = left_bound + (max_width_px - text_width_px) / 2;
+                    it.printf(text_center_x, y_pos, primary_font_id, color, TextAlign::TOP_LEFT, "%s", text.c_str());
+                }
+                return;
+            }
+
+            if (cache.last_text != text || cache.last_separator != separator) {
+                cache.last_text = text;
+                cache.last_separator = separator;
+                cache.base_chars.clear();
+                cache.scroll_chars.clear();
+
+                size_t pos = 0;
+                while (pos < text.length()) {
+                    cache.base_chars.push_back(get_utf8_char(text, pos));
+                }
+
+                cache.base_text_width_px = cache.base_chars.size() * char_width;
+
+                if (cache.base_text_width_px > max_width_px) {
+                    cache.scroll_chars = cache.base_chars;
+                    for (size_t i = 0; i < separator.length(); i++) {
+                        cache.scroll_chars.push_back(std::string(1, separator[i]));
+                    }
+                    cache.scroll_px = cache.scroll_chars.size() * char_width;
+                    auto loop_chars = cache.scroll_chars;
+                    cache.scroll_chars.insert(cache.scroll_chars.end(),
+                                              loop_chars.begin(),
+                                              loop_chars.end());
+                } else {
+                    cache.scroll_px = 0;
+                }
+            }
+
+            if (cache.base_text_width_px > max_width_px && cache.scroll_px > 0) {
+                int offset = scroll_offset_id % (cache.scroll_px + 20);
+                int effective_offset = offset < 20 ? 0 : offset - 20;
+
+                for (size_t i = 0; i < cache.scroll_chars.size(); i++) {
                     int char_x = left_bound - effective_offset + i * char_width;
                     if (char_x >= left_bound && char_x <= right_bound) {
-                        it.printf(char_x, y_pos, font_id, color, TextAlign::TOP_LEFT, "%c", scroll_text[i]);
+                        it.printf(char_x, y_pos, utf8_font_id, color, TextAlign::TOP_LEFT, "%s", cache.scroll_chars[i].c_str());
                     }
                 }
             } else {
-                int text_center_x = left_bound + (max_width_px - text_width_px) / 2;
-                it.printf(text_center_x, y_pos, font_id, color, TextAlign::TOP_LEFT, "%s", text.c_str());
+                it.printf(center_x, y_pos, active_font, color, TextAlign::TOP_CENTER, "%s", text.c_str());
             }
         };
 
@@ -562,21 +789,19 @@ display:
                 const std::string& title = id(spotify_media_title).has_state() ? id(spotify_media_title).state : "";
                 const std::string sep = "   -=-   ";
 
-                render_scrolling_text(artist, 8, 5, id(scroll_offset_artist), 
-                                    COLOR_WHITE, sep, id(F6_10));
-                render_scrolling_text(title, 21, 6, id(scroll_offset_title), 
-                                    COLOR_SPOTIFY_TITLE, sep, id(F6_10));
+                // Use spleen-5x8 which has Swedish character support built-in
+                render_scrolling_text(artist_cache, artist, 8, 5, id(scroll_offset_artist),
+                                      COLOR_WHITE, sep, id(small_font), id(small_font_utf8));
+                render_scrolling_text(title_cache, title, 21, 5, id(scroll_offset_title),
+                                      COLOR_SPOTIFY_TITLE, sep, id(small_font), id(small_font_utf8));
         }
-
-
-
 
         // Page 1: Custom message
         else if (id(display_page) == 1) {
           if (id(custom_display_text).has_state()) {
             const std::string& message = id(custom_display_text).state;
-            render_scrolling_text(message, 16, 4, id(scroll_offset_title), 
-                                COLOR_WHITE, "     ", id(small_font));
+            render_scrolling_text(custom_cache, message, 16, 4, id(scroll_offset_title),
+                                  COLOR_WHITE, "     ", id(small_font), id(small_font_utf8));
           }
         }
 
@@ -584,21 +809,23 @@ display:
         else if (id(display_page) == 2) {
             if (id(weather_condition).has_state()) {
                 const std::string& cond = id(weather_condition).state;
-                // Optimized icon selection using string comparison
+                int icon_x = 113;
+                int icon_y = 0;
+                // Pixel-art icons drawn directly
                 if (cond == "sunny") {
-                    it.image(113, 0, id(icon_sunny), COLOR_WHITE);
+                    draw_sunny(icon_x, icon_y);
                 } else if (cond == "partlycloudy") {
-                    it.image(113, 0, id(icon_partlycloudy), COLOR_WHITE);
+                    draw_partlycloudy(icon_x, icon_y);
                 } else if (cond == "cloudy") {
-                    it.image(113, 0, id(icon_cloudy), COLOR_WHITE);
+                    draw_cloudy(icon_x, icon_y);
                 } else if (cond == "rainy") {
-                    it.image(113, 0, id(icon_rainy), COLOR_WHITE);
+                    draw_rainy(icon_x, icon_y);
                 } else if (cond == "snowy") {
-                    it.image(113, 0, id(icon_snowy), COLOR_WHITE);
+                    draw_snowy(icon_x, icon_y);
                 } else if (cond == "lightning") {
-                    it.image(113, 0, id(icon_lightning), COLOR_WHITE);
+                    draw_lightning(icon_x, icon_y);
                 } else if (cond == "fog") {
-                    it.image(113, 0, id(icon_fog), COLOR_WHITE);
+                    draw_fog(icon_x, icon_y);
                 }
             }
 
@@ -618,9 +845,9 @@ display:
             }
 
             if (id(pool_max_people).has_state()) {
-                it.printf(center_x, 15, id(small_font), COLOR_YELLOW, TextAlign::CENTER, "Max: %d", (int)id(pool_max_people).state);
+                it.printf(center_x, 15, id(small_font), COLOR_YELLOW, TextAlign::CENTER, "Peak: %d", (int)id(pool_max_people).state);
             } else {
-                it.printf(center_x, 15, id(small_font), COLOR_RED, TextAlign::CENTER, "Max: --");
+                it.printf(center_x, 15, id(small_font), COLOR_RED, TextAlign::CENTER, "Peak: --");
             }
 
             if (id(current_pool_session_duration).has_state()) {
@@ -657,8 +884,11 @@ display:
           it.printf(66, 0, id(small_font), COLOR_DEBUG_YELLOW, TextAlign::TOP_LEFT, "DEBUG");
 
           if (id(esp32_temp).has_state()) {
-            it.printf(66, 9, id(small_font), COLOR_WHITE, TextAlign::TOP_LEFT,
-                      "Temp: %.1fC", id(esp32_temp).state);
+            float t = id(esp32_temp).state;
+            if (!isnan(t)) {
+              it.printf(66, 9, id(small_font), COLOR_WHITE, TextAlign::TOP_LEFT,
+                        "Temp: %.1fC", t);
+            }
           }
 
           if (id(wifi_strength).has_state()) {
@@ -669,4 +899,3 @@ display:
           it.printf(66, 23, id(small_font), COLOR_DEBUG_GREEN, TextAlign::TOP_LEFT,
                     "Uptime: %u min", (unsigned)(millis() / 60000));
         }
-

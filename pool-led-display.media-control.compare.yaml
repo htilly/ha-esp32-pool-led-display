@@ -1,0 +1,72 @@
+packages:
+  base_config: !include pool-led-display.yaml
+
+# Comparison overlay:
+# - Keeps your current display config unchanged
+# - Adds media control entities/actions for Home Assistant
+# - Target player defaults to media_player.altan
+
+substitutions:
+  media_target_entity: media_player.altan
+
+button:
+  - platform: template
+    name: "Media Control Play/Pause"
+    id: media_control_play_pause
+    on_press:
+      - homeassistant.service:
+          service: media_player.media_play_pause
+          data:
+            entity_id: ${media_target_entity}
+
+  - platform: template
+    name: "Media Control Next Track"
+    id: media_control_next
+    on_press:
+      - homeassistant.service:
+          service: media_player.media_next_track
+          data:
+            entity_id: ${media_target_entity}
+
+  - platform: template
+    name: "Media Control Previous Track"
+    id: media_control_previous
+    on_press:
+      - homeassistant.service:
+          service: media_player.media_previous_track
+          data:
+            entity_id: ${media_target_entity}
+
+number:
+  - platform: template
+    name: "Media Control Volume"
+    id: media_control_volume
+    min_value: 0.0
+    max_value: 1.0
+    step: 0.05
+    optimistic: true
+    mode: slider
+    set_action:
+      - homeassistant.service:
+          service: media_player.volume_set
+          data:
+            entity_id: ${media_target_entity}
+            volume_level: !lambda 'return x;'
+
+text_sensor:
+  - platform: homeassistant
+    entity_id: ${media_target_entity}
+    attribute: media_title
+    id: media_control_title
+    internal: true
+
+  - platform: homeassistant
+    entity_id: ${media_target_entity}
+    attribute: media_artist
+    id: media_control_artist
+    internal: true
+
+  - platform: homeassistant
+    entity_id: ${media_target_entity}
+    id: media_control_state
+    internal: true
