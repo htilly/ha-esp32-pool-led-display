@@ -91,7 +91,7 @@ interval:
           const int current_page = id(display_page);
           const int page_order[] = {0, 1, 2, 3, 4, 5, 6};
           auto page_enabled = [&](int page) -> bool {
-            if (page == 0) return false;  // Summary is fallback only, not in rotation.
+            if (page == 0) return id(display_weather_enabled).state;  // Summary rotates together with the weather page.
             if (page == 1) return id(display_spotify_enabled).state;
             if (page == 2) return id(display_custom_enabled).state;
             if (page == 3) return id(display_weather_enabled).state;
@@ -171,6 +171,16 @@ sensor:
     entity_id: sensor.current_pool_session_duration
     id: current_pool_session_duration
     name: "Aktiv tid i poolen"
+
+  - platform: homeassistant
+    entity_id: sensor.pool_weekly_minutes
+    id: pool_weekly_minutes
+    name: "Pool minuter denna vecka"
+
+  - platform: homeassistant
+    entity_id: sensor.pool_monthly_minutes
+    id: pool_monthly_minutes
+    name: "Pool minuter denna månad"
 
   - platform: homeassistant
     entity_id: input_number.pool_session_max_people
@@ -886,15 +896,30 @@ display:
           draw_text_5x7(27, 44, out, COLOR_WHITE, 1);
           draw_text_3x5(23, 55, cond_label, COLOR_CYAN, 1);
         } else if (id(display_page) == 4) {
-          draw_page_header("STATS");
-          char peak_people[5];
-          char session_mins[7];
-          if (id(pool_max_people).has_state()) snprintf(peak_people, sizeof(peak_people), "%d", (int) id(pool_max_people).state);
-          else snprintf(peak_people, sizeof(peak_people), "--");
-          if (id(current_pool_session_duration).has_state()) snprintf(session_mins, sizeof(session_mins), "%d m", (int) id(current_pool_session_duration).state);
-          else snprintf(session_mins, sizeof(session_mins), "--");
-          render_metric_row(46, "PEAK", peak_people, COLOR_YELLOW);
-          render_metric_row(56, "TID", session_mins, COLOR_CYAN);
+          // Two sub-pages alternate every 10s while STATS is shown (wall-clock based,
+          // same approach as the pH/ORP box). Falls back to sub-page A if time invalid.
+          const bool stats_totals = time_valid && (now.second % 20) >= 10;
+          if (!stats_totals) {
+            draw_page_header("STATS");
+            char peak_people[5];
+            char session_mins[16];
+            if (id(pool_max_people).has_state()) snprintf(peak_people, sizeof(peak_people), "%d", (int) id(pool_max_people).state);
+            else snprintf(peak_people, sizeof(peak_people), "--");
+            if (id(current_pool_session_duration).has_state()) snprintf(session_mins, sizeof(session_mins), "%d min", (int) id(current_pool_session_duration).state);
+            else snprintf(session_mins, sizeof(session_mins), "--");
+            render_metric_row(46, "PEAK", peak_people, COLOR_YELLOW);
+            render_metric_row(56, "TID", session_mins, COLOR_CYAN);
+          } else {
+            draw_page_header("TOTALS");
+            char week_buf[16];
+            char month_buf[16];
+            if (id(pool_weekly_minutes).has_state()) snprintf(week_buf, sizeof(week_buf), "%.1f h", id(pool_weekly_minutes).state / 60.0f);
+            else snprintf(week_buf, sizeof(week_buf), "--");
+            if (id(pool_monthly_minutes).has_state()) snprintf(month_buf, sizeof(month_buf), "%.1f h", id(pool_monthly_minutes).state / 60.0f);
+            else snprintf(month_buf, sizeof(month_buf), "--");
+            render_metric_row(46, "WEEK", week_buf, COLOR_GREEN);
+            render_metric_row(56, "MONTH", month_buf, COLOR_CYAN);
+          }
         } else if (id(display_page) == 5) {
           draw_page_header("TIMER");
           unsigned long total_tenths = id(stop_timer_millis) / 100;
