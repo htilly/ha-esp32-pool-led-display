@@ -89,7 +89,7 @@ interval:
     then:
       - lambda: |-
           const int current_page = id(display_page);
-          const int page_order[] = {0, 1, 2, 3, 4, 5, 6};
+          const int page_order[] = {0, 1, 2, 3, 4, 5, 6, 7};
           auto page_enabled = [&](int page) -> bool {
             if (page == 0) return id(display_weather_enabled).state;  // Summary rotates together with the weather page.
             if (page == 1) return id(display_spotify_enabled).state;
@@ -98,6 +98,7 @@ interval:
             if (page == 4) return id(display_stats_enabled).state;
             if (page == 5) return id(display_stop_timer_enabled).state;
             if (page == 6) return id(display_debug_enabled).state;
+            if (page == 7) return id(display_plane_enabled).state;
             return false;
           };
 
@@ -123,7 +124,7 @@ interval:
           if (id(display_page) == 1) {
             id(scroll_offset_artist) += 1;
             id(scroll_offset_title) += 1;
-          } else if (id(display_page) == 2) {
+          } else if (id(display_page) == 2 || id(display_page) == 7) {
             id(scroll_offset_title) += 1;
           }
 
@@ -223,6 +224,11 @@ sensor:
     id: altan_volume
     internal: true
 
+  - platform: homeassistant
+    entity_id: sensor.plane_overhead_speed_kmh
+    id: plane_speed
+    name: "Plane Overhead Speed"
+
 binary_sensor:
   - platform: homeassistant
     entity_id: switch.poolbelysning
@@ -295,6 +301,16 @@ binary_sensor:
       - lambda: |-
           if (id(display_page) == 6) id(display_page) = 0;
 
+  - platform: homeassistant
+    entity_id: input_boolean.pool_led_display_plane
+    id: display_plane_enabled
+    on_press:
+      - lambda: |-
+          id(display_page) = 7;
+    on_release:
+      - lambda: |-
+          if (id(display_page) == 7) id(display_page) = 0;
+
 text_sensor:
   - platform: homeassistant
     entity_id: media_player.spotify_htilly
@@ -326,6 +342,18 @@ text_sensor:
     entity_id: sensor.pool_pool_roof_classification
     id: pool_roof_classification
     name: "Pool tak klassificering"
+
+  - platform: homeassistant
+    entity_id: sensor.plane_overhead_route
+    id: plane_route
+
+  - platform: homeassistant
+    entity_id: sensor.plane_overhead_airline
+    id: plane_airline
+
+  - platform: homeassistant
+    entity_id: sensor.plane_overhead_callsign
+    id: plane_callsign
 
 switch:
   - platform: hub75_matrix_display_custom
@@ -413,6 +441,7 @@ display:
         static ScrollCache artist_cache;
         static ScrollCache title_cache;
         static ScrollCache custom_cache;
+        static ScrollCache plane_cache;
 
         // Draw via the component's native primitives. draw_absolute_pixel_internal
         // already clips to 0..63, so no separate bounds check is needed here.
@@ -479,6 +508,7 @@ display:
             case '.': rows[0]="000"; rows[1]="000"; rows[2]="000"; rows[3]="000"; rows[4]="010"; break;
             case '-': rows[0]="000"; rows[1]="000"; rows[2]="111"; rows[3]="000"; rows[4]="000"; break;
             case '/': rows[0]="001"; rows[1]="001"; rows[2]="010"; rows[3]="100"; rows[4]="100"; break;
+            case '>': rows[0]="100"; rows[1]="010"; rows[2]="001"; rows[3]="010"; rows[4]="100"; break;
             case ' ': rows[0]="000"; rows[1]="000"; rows[2]="000"; rows[3]="000"; rows[4]="000"; break;
           }
           for (int row = 0; row < 5; row++) {
@@ -561,6 +591,13 @@ display:
           fill_rect(x, y + 2, 4, 3, color);
           fill_rect(x + 1, y + 5, 1, 2, color);
           fill_rect(x + 2, y + 5, 1, 2, color);
+        };
+        // Small side-view airplane pointing right (~9x7), matching the icon style.
+        auto draw_plane_icon = [&](int x, int y, const Color &color) {
+          fill_rect(x + 1, y + 3, 6, 1, color);   // fuselage
+          draw_pixel(x + 7, y + 3, color);        // nose
+          draw_vline(x + 3, y + 1, 5, color);     // main wings
+          draw_vline(x + 1, y + 2, 3, color);     // tail fin
         };
         auto draw_sunny = [&](int x, int y) {
           fill_rect(x + 5, y + 5, 6, 6, COLOR_YELLOW);
@@ -941,4 +978,28 @@ display:
           render_metric_row(44, "WIFI", wifi_buf, COLOR_WHITE);
           render_metric_row(50, "TEMP", temp_buf, COLOR_BLUE);
           render_metric_row(56, "UP", up_buf, COLOR_GREEN);
+        } else if (id(display_page) == 7) {
+          draw_page_header("PLANE");
+          // A plane is "overhead" when the closest-flight callsign sensor is non-empty.
+          const bool has_plane = id(plane_callsign).has_state() && !id(plane_callsign).state.empty();
+          if (has_plane) {
+            // Row 1: airplane icon + route (fall back to callsign if route is unknown).
+            draw_plane_icon(3, 42, COLOR_CYAN);
+            std::string route = id(plane_route).has_state() ? id(plane_route).state : "";
+            if (route.empty() || route == ">") route = id(plane_callsign).state;
+            draw_text_3x5(14, 43, route, COLOR_WHITE, 1);
+            // Row 2: airline name, scrolling when it overflows 64px.
+            const std::string airline = (id(plane_airline).has_state() && !id(plane_airline).state.empty())
+                                          ? id(plane_airline).state : "Unknown";
+            render_lower_scrolling_text(plane_cache, airline, 50, 5, id(scroll_offset_title), COLOR_CYAN, "   ");
+            // Row 3: ground speed.
+            if (id(plane_speed).has_state()) {
+              char spd_buf[12];
+              snprintf(spd_buf, sizeof(spd_buf), "%d KM/H", (int) id(plane_speed).state);
+              draw_text_3x5(4, 58, spd_buf, COLOR_GREEN, 1);
+            }
+          } else {
+            draw_plane_icon(24, 46, COLOR_GRAY);
+            it.printf(32, 54, id(small_font), COLOR_GRAY, TextAlign::TOP_CENTER, "No plane");
+          }
         }
