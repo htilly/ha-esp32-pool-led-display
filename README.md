@@ -138,19 +138,10 @@ these Home Assistant sensors (empty = clear skies, page shows "No plane"):
 - `sensor.plane_overhead_speed_kmh` - ground speed in km/h
 - `sensor.plane_overhead_callsign` - flight callsign (drives the "plane present?" check)
 
-Setup (no YAML files — everything via the Home Assistant UI):
-1. Install the [FlightRadar24 integration](https://github.com/AlexandrErohin/home-assistant-flightradar24)
-   via HACS and add it with the pool's latitude/longitude, a radius (~15-25 km),
-   optional min/max altitude, and a ~30 s scan interval (free, no API key). This creates
-   `sensor.flightradar24_current_in_area`, whose `flights` attribute is the nearby-flight list.
-2. Settings → Devices & Services → Helpers → **+ Create Helper → Toggle**, name it
-   `Pool LED Display Plane` (→ `input_boolean.pool_led_display_plane`).
-3. **+ Create Helper → Template → Template a sensor** four times, one per sensor above,
-   naming them `Plane Overhead Route` / `Airline` / `Speed Kmh` / `Callsign` so the entity
-   IDs match. Each state template picks the closest flight from
-   `sensor.flightradar24_current_in_area`'s `flights` attribute (sort by `distance`, take
-   first) and returns the relevant field; set the Speed helper's unit to `km/h`. The exact
-   templates are in the project chat / commit message.
+These sensors are provided by the FlightRadar24 HACS integration plus a few
+Home Assistant UI template helpers (no YAML files). For exact step-by-step setup —
+integration config, the toggle, and the four template sensors with copy-paste
+templates — see **[docs/plane-overhead-ha-setup.md](docs/plane-overhead-ha-setup.md)**.
 
 ## Display Layout
 
