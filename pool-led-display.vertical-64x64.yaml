@@ -599,6 +599,37 @@ display:
           draw_vline(x + 3, y + 1, 5, color);     // main wings
           draw_vline(x + 1, y + 2, 3, color);     // tail fin
         };
+        // IATA code -> full airport name, for routes shown on the PLANE page.
+        // Covers airports commonly seen on flights near the pool; unknown codes
+        // fall back to showing just the code.
+        auto airport_name = [](const std::string &code) -> std::string {
+          struct AirportName { const char *code; const char *name; };
+          static const AirportName airports[] = {
+            {"ARN", "Stockholm Arlanda"}, {"CPH", "Copenhagen Kastrup"}, {"OSL", "Oslo Gardermoen"},
+            {"GOT", "Gothenburg Landvetter"}, {"MMX", "Malmo"}, {"HEL", "Helsinki Vantaa"},
+            {"BLL", "Billund"}, {"AAL", "Aalborg"}, {"NCE", "Nice Cote d'Azur"},
+            {"PVK", "Aktion Preveza"}, {"LHR", "London Heathrow"}, {"LGW", "London Gatwick"},
+            {"AMS", "Amsterdam Schiphol"}, {"FRA", "Frankfurt"}, {"MUC", "Munich"},
+            {"CDG", "Paris Charles de Gaulle"}, {"ORY", "Paris Orly"}, {"BCN", "Barcelona"},
+            {"MAD", "Madrid Barajas"}, {"FCO", "Rome Fiumicino"}, {"MXP", "Milan Malpensa"},
+            {"ZRH", "Zurich"}, {"VIE", "Vienna"}, {"WAW", "Warsaw Chopin"},
+            {"IST", "Istanbul"}, {"DXB", "Dubai"}, {"BGO", "Bergen"}, {"TRD", "Trondheim"},
+            {"AGP", "Malaga"}, {"PMI", "Palma de Mallorca"}, {"LPA", "Las Palmas"},
+            {"ALC", "Alicante"}, {"ATH", "Athens"}, {"HRG", "Hurghada"}, {"RHO", "Rhodes"},
+            {"SPU", "Split"}, {"DBV", "Dubrovnik"}, {"BER", "Berlin Brandenburg"},
+            {"LIS", "Lisbon"}, {"OPO", "Porto"}, {"KEF", "Reykjavik Keflavik"},
+            {"BBU", "Bucharest Aurel Vlaicu"}, {"OTP", "Bucharest Henri Coanda"},
+            {"SOF", "Sofia"}, {"BEG", "Belgrade"}, {"CHQ", "Chania"}, {"HER", "Heraklion"},
+            {"KGS", "Kos"}, {"CFU", "Corfu"}, {"ZTH", "Zakynthos"}, {"PFO", "Paphos"},
+            {"LCA", "Larnaca"}, {"BUD", "Budapest"}, {"PRG", "Prague"}, {"KRK", "Krakow"},
+            {"GDN", "Gdansk"}, {"VNO", "Vilnius"}, {"RIX", "Riga"}, {"TLL", "Tallinn"},
+            {"OSD", "Ostersund Are"}, {"QMS", "Stockholm Ska-Edeby"},
+          };
+          for (const auto &a : airports) {
+            if (code == a.code) return std::string(a.name);
+          }
+          return std::string();
+        };
         auto draw_sunny = [&](int x, int y) {
           fill_rect(x + 5, y + 5, 6, 6, COLOR_YELLOW);
           draw_hline(x + 6, y + 1, 4, COLOR_YELLOW);
@@ -988,10 +1019,21 @@ display:
             std::string route = id(plane_route).has_state() ? id(plane_route).state : "";
             if (route.empty() || route == ">") route = id(plane_callsign).state;
             draw_text_3x5(14, 43, route, COLOR_WHITE, 1);
-            // Row 2: airline name, scrolling when it overflows 64px.
+            // Row 2: airline + full origin/destination airport names, scrolling
+            // (rarely fits in 64px, e.g. "SAS  CPH (Copenhagen Kastrup) > ARN (Stockholm Arlanda)").
             const std::string airline = (id(plane_airline).has_state() && !id(plane_airline).state.empty())
                                           ? id(plane_airline).state : "Unknown";
-            render_lower_scrolling_text(plane_cache, airline, 50, 5, id(scroll_offset_title), COLOR_CYAN, "   ");
+            std::string airline_line = airline;
+            size_t route_sep = route.find('>');
+            if (route_sep != std::string::npos) {
+              std::string from = route.substr(0, route_sep);
+              std::string to = route.substr(route_sep + 1);
+              std::string from_name = airport_name(from);
+              std::string to_name = airport_name(to);
+              airline_line += "  " + from + (from_name.empty() ? "" : " (" + from_name + ")")
+                             + " > " + to + (to_name.empty() ? "" : " (" + to_name + ")");
+            }
+            render_lower_scrolling_text(plane_cache, airline_line, 50, 5, id(scroll_offset_title), COLOR_CYAN, "   ");
             // Row 3: ground speed.
             if (id(plane_speed).has_state()) {
               char spd_buf[12];
