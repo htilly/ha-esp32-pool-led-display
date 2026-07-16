@@ -993,7 +993,7 @@ display:
             else snprintf(peak_people, sizeof(peak_people), "--");
             if (id(current_pool_session_duration).has_state()) snprintf(session_mins, sizeof(session_mins), "%d", (int) id(current_pool_session_duration).state);
             else snprintf(session_mins, sizeof(session_mins), "--");
-            render_metric_row_big(44, "PEAK", peak_people, COLOR_YELLOW);
+            render_metric_row_big(42, "PEAK", peak_people, COLOR_YELLOW);
             render_metric_row_big(54, "TID", session_mins, COLOR_CYAN);
           } else {
             draw_page_header("TOTALS");
@@ -1003,7 +1003,7 @@ display:
             else snprintf(week_buf, sizeof(week_buf), "--");
             if (id(pool_monthly_minutes).has_state()) snprintf(month_buf, sizeof(month_buf), "%.1f", id(pool_monthly_minutes).state / 60.0f);
             else snprintf(month_buf, sizeof(month_buf), "--");
-            render_metric_row_big(44, "WEEK", week_buf, COLOR_GREEN);
+            render_metric_row_big(42, "WEEK", week_buf, COLOR_GREEN);
             render_metric_row_big(54, "MONTH", month_buf, COLOR_CYAN);
           }
         } else if (id(display_page) == 5) {
