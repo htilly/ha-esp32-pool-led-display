@@ -904,16 +904,16 @@ display:
         };
 
         if (id(display_page) == 0) {
+          // Air temp dropped here -- it already gets its own dedicated WEATHER page.
           draw_page_header("SUMMARY");
-          char air_text[8];
-          if (id(weather_temp).has_state()) snprintf(air_text, sizeof(air_text), "%.1f", id(weather_temp).state);
-          else snprintf(air_text, sizeof(air_text), "--.-");
-          render_metric_row(44, "AIR", air_text, COLOR_WHITE);
           std::string roof_text = "--";
-          if (id(pool_roof_classification).has_state()) roof_text = id(pool_roof_classification).state;
-          render_metric_row(50, "ROOF", roof_text, COLOR_CYAN);
+          if (id(pool_roof_classification).has_state()) {
+            const std::string &roof_state = id(pool_roof_classification).state;
+            roof_text = (roof_state == "open") ? "OPEN" : (roof_state == "closed") ? "SHUT" : "--";
+          }
+          render_metric_row_big(44, "ROOF", roof_text, COLOR_CYAN);
           const bool light_on = id(pool_light).state;
-          render_metric_row(56, "LIGHT", light_on ? "ON" : "OFF", light_on ? COLOR_GREEN : COLOR_LIGHT);
+          render_metric_row_big(54, "LIGHT", light_on ? "ON" : "OFF", light_on ? COLOR_GREEN : COLOR_LIGHT);
         } else if (id(display_page) == 1) {
           draw_page_header("SPOTIFY");
           // Volume bar replaces separator line (drawn on top of dark line at y=40)
