@@ -355,6 +355,10 @@ text_sensor:
     entity_id: sensor.plane_overhead_callsign
     id: plane_callsign
 
+  - platform: homeassistant
+    entity_id: sensor.plane_overhead_category
+    id: plane_category
+
 switch:
   - platform: hub75_matrix_display_custom
     matrix_id: matrix
@@ -598,6 +602,14 @@ display:
           draw_pixel(x + 7, y + 3, color);        // nose
           draw_vline(x + 3, y + 1, 5, color);     // main wings
           draw_vline(x + 1, y + 2, 3, color);     // tail fin
+        };
+        // Small side-view helicopter (~9x7), same footprint as draw_plane_icon.
+        auto draw_heli_icon = [&](int x, int y, const Color &color) {
+          draw_hline(x, y, 9, color);             // main rotor blade
+          draw_vline(x + 4, y + 1, 2, color);     // rotor mast
+          fill_rect(x + 2, y + 2, 4, 3, color);   // cabin
+          draw_hline(x + 5, y + 3, 3, color);     // tail boom
+          draw_vline(x + 7, y + 2, 3, color);     // tail rotor
         };
         // IATA code -> full airport name, for routes shown on the PLANE page.
         // Covers airports commonly seen on flights near the pool; unknown codes
@@ -911,7 +923,7 @@ display:
             const std::string &roof_state = id(pool_roof_classification).state;
             roof_text = (roof_state == "open") ? "OPEN" : (roof_state == "closed") ? "SHUT" : "--";
           }
-          render_metric_row_big(44, "ROOF", roof_text, COLOR_CYAN);
+          render_metric_row_big(42, "ROOF", roof_text, COLOR_CYAN);
           const bool light_on = id(pool_light).state;
           render_metric_row_big(54, "LIGHT", light_on ? "ON" : "OFF", light_on ? COLOR_GREEN : COLOR_LIGHT);
         } else if (id(display_page) == 1) {
@@ -1020,8 +1032,10 @@ display:
           // A plane is "overhead" when the closest-flight callsign sensor is non-empty.
           const bool has_plane = id(plane_callsign).has_state() && !id(plane_callsign).state.empty();
           if (has_plane) {
-            // Row 1: airplane icon + route (fall back to callsign if route is unknown).
-            draw_plane_icon(3, 42, COLOR_CYAN);
+            // Row 1: aircraft icon (helicopter shape if that's what's closest) + route
+            // (fall back to callsign if route is unknown).
+            const bool is_heli = id(plane_category).has_state() && id(plane_category).state == "Helicopter";
+            if (is_heli) draw_heli_icon(3, 42, COLOR_CYAN); else draw_plane_icon(3, 42, COLOR_CYAN);
             std::string route = id(plane_route).has_state() ? id(plane_route).state : "";
             if (route.empty() || route == ">") route = id(plane_callsign).state;
             draw_text_3x5(14, 43, route, COLOR_WHITE, 1);
